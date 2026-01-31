@@ -1,26 +1,50 @@
 """
-LangPy SDK - Clean, simple interface for AI primitives.
+LangPy SDK - DEPRECATED: Use langpy.Langpy instead.
 
-Usage:
-    # Old API (still works for backward compatibility)
-    from langpy_sdk import Agent, Memory, Thread, Pipe, Workflow
+===========================================================================
+MIGRATION NOTICE
+===========================================================================
 
+This module (langpy_sdk) is deprecated. Please migrate to the new unified
+Langpy client for Langbase-compatible API:
+
+OLD (deprecated):
+    from langpy_sdk import Agent, Memory, Pipe
     agent = Agent(model="gpt-4o-mini")
     response = await agent.run("Hello!")
 
-    # New API (recommended) - True Lego Blocks Architecture
-    from langpy.core import Context, pipeline
-    from langpy_sdk import Pipe, Memory
+NEW (recommended):
+    from langpy import Langpy
 
-    # Compose primitives
-    rag = Memory(name="docs") | Pipe(model="gpt-4o-mini")
-    result = await rag.process(Context(query="What is LangPy?"))
+    lb = Langpy(api_key="...")
 
-    if result.is_success():
-        print(result.unwrap().response)
+    # All 9 primitives available
+    response = await lb.agent.run(model="openai:gpt-4", input="Hello!")
+    results = await lb.memory.retrieve(query="search term")
+
+    # Pipeline composition
+    rag = lb.memory | lb.pipe
+    result = await rag.process(Context(query="What is Python?"))
+
+    # Workflow orchestration
+    wf = lb.workflow(name="my-agent")
+    wf.step(id="retrieve", primitive=lb.memory)
+    wf.step(id="generate", primitive=lb.agent, after=["retrieve"])
+    result = await wf.run(query="Hello")
+
+===========================================================================
 """
 
-__version__ = "2.0.0"
+import warnings
+
+warnings.warn(
+    "langpy_sdk is deprecated. Use 'from langpy import Langpy' instead. "
+    "See langpy_sdk/__init__.py for migration guide.",
+    DeprecationWarning,
+    stacklevel=2
+)
+
+__version__ = "2.0.0"  # Deprecated
 
 # Original SDK primitives (backward compatible)
 from .agent import Agent, ToolDef, tool, AgentResponse

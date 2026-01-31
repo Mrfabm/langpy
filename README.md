@@ -1,25 +1,53 @@
 # LangPy
 
-A comprehensive AI agent framework that implements Langbase-style primitives for building sophisticated AI systems with **100% feature parity** plus advanced capabilities.
+**Langbase for Python** - A comprehensive AI framework implementing all 9 Langbase primitives with full API parity plus composable pipeline architecture.
 
-## 🆕 Version 2.0: True Lego Blocks Architecture
-
-LangPy 2.0 introduces a **composable primitives architecture** that enables real Lego-like composition of AI components:
+## Quick Start
 
 ```python
-from langpy.core import Context, pipeline, parallel
-from langpy_sdk import Memory, Pipe
+from langpy import Langpy
 
-# Compose primitives with | (sequential) and & (parallel) operators
-rag_pipeline = Memory(name="docs", k=5) | Pipe(system_prompt="Answer using context.")
+# Initialize (like Langbase SDK)
+lb = Langpy(api_key="your-api-key")
 
-# Execute with unified Context
-result = await rag_pipeline.process(Context(query="What is LangPy?"))
+# Use any of the 9 primitives
+response = await lb.agent.run(
+    model="openai:gpt-4",
+    input="What is Python?",
+    instructions="Be concise"
+)
+print(response.output)
+```
 
+## The 9 Primitives
+
+| Primitive | Description | Example |
+|-----------|-------------|---------|
+| `lb.agent` | Unified LLM API (100+ models) | `await lb.agent.run(model="openai:gpt-4", input="Hello")` |
+| `lb.pipe` | Single LLM call with templates | `await lb.pipe.run(name="summarizer", variables={"text": "..."})` |
+| `lb.memory` | Vector storage & RAG | `await lb.memory.retrieve(query="search", top_k=5)` |
+| `lb.thread` | Conversation history | `await lb.thread.create()` |
+| `lb.workflow` | Multi-step orchestration | `lb.workflow().step(id="s1", primitive=lb.agent)` |
+| `lb.parser` | Document text extraction | `await lb.parser.run(document="file.pdf")` |
+| `lb.chunker` | Text segmentation | `await lb.chunker.run(content="...", chunk_size=512)` |
+| `lb.embed` | Text to vectors | `await lb.embed.run(texts=["hello", "world"])` |
+| `lb.tools` | Web search, crawl, custom | `await lb.tools.run(tool="web_search", query="...")` |
+
+## Pipeline Composition
+
+All primitives can be composed with `|` (sequential) and `&` (parallel) operators:
+
+```python
+from langpy import Langpy, Context
+
+lb = Langpy()
+
+# RAG pipeline: retrieve → generate
+rag = lb.memory | lb.pipe
+
+result = await rag.process(Context(query="What is LangPy?"))
 if result.is_success():
     print(result.unwrap().response)
-    print(f"Cost: ${result.unwrap().cost.total_cost:.4f}")
-    print(f"Tokens: {result.unwrap().token_usage.total_tokens}")
 ```
 
 ### Key Features of v2.0
