@@ -1,0 +1,109 @@
+version: '3.8'
+
+services:
+  # Parser API Service
+  parser-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - PARSER_API_KEY=${PARSER_API_KEY:-dev-key}
+      - STORAGE_PATH=/app/data/parser
+      - MAX_FILE_SIZE=52428800
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - parser_data:/app/data/parser
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - parser-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Parser Worker
+  parser-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["python", "-m", "parser.worker"]
+    environment:
+      - STORAGE_PATH=/app/data/parser
+      - MAX_CONCURRENT_JOBS=5
+      - REDIS_URL=redis://redis:6379/0
+      - POSTGRES_URL=postgresql://postgres:postgres@postgres:5432/parser
+    volumes:
+      - parser_data:/app/data/parser
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - parser-network
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+
+  # Redis for job queue and caching
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - parser-network
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+  # PostgreSQL for job storage
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=parser
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - parser-network
+    restart: unless-stopped
+
+  # MinIO for object storage (optional)
+  minio:
+    image: minio/minio:latest
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    volumes:
+      - minio_data:/data
+    networks:
+      - parser-network
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+
+volumes:
+  parser_data:
+    driver: local
+  redis_data:
+    driver: local
+  postgres_data:
+    driver: local
+  minio_data:
+    driver: local
+
+networks:
+  parser-network:
+    driver: bridge 

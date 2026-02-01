@@ -1,0 +1,180 @@
+DO NOT GIVE ME HIGH LEVEL STUFF, IF I ASK FOR FIX OR EXPLANATION, I WANT ACTUAL CODE OR EXPLANATION!!! I DON'T WANT "Here's how you can blablabla"
+
+- Purpose is to have each primitive have same functionalities same as the same langbase primitive but in python. 
+- Please create a new file, do a websearch to understand the functionalities of the primitive you are working on. 
+- Before creating a new file, search the repo; if a file of the same
+  path **and identical content** already exists, do not create it.
+- Use the project’s virtual environment:
+  .venv\Scripts\activate && <command>
+- Make incremental edits:
+  • Respond with <<patch>> diffs for existing files.
+  • Full-file rewrites allowed only when I say “full rewrite”.
+- Respect file scope:
+  • Touch only *.py files unless instructed otherwise.
+- Follow Black 88-char formatting and PEP-257 docstrings.
+- Never generate code that writes outside the repo root.
+- Always add new dependencies to *requirements.txt* and install them
+  inside the activated virtual environment.
+- Always check if each dependency is already installed before
+  attempting to install it.
+- When you propose any shell command that installs Python libraries,
+  first verify the packages are *not* already present in `.venv`:
+    .venv\Scripts\activate && ^
+    python - <<'PY'
+    import importlib.util as iu, json, os, sys
+    pkgs = json.loads(os.getenv("PKGS"))
+    missing = [p for p in pkgs if iu.find_spec(p) is None]
+    if missing:
+        print(" ".join(missing))
+    PY
+  Then install **only** the space-separated list emitted by that script.
+  Never run a blanket `pip install ...` without this check.
+
+- Always create demos in separate files using specific, relevant names. Before creating a new demo, first check whether an identical or similar one already exists to avoid duplication. 
+
+📁 Rule: File and Folder Organization
+Structure files and folders based on functionality and domain logic to maintain clarity, modularity, and scalability.
+
+Group related files into clearly named folders such as utils/, models/, demos/, services/, and tests/.
+
+Each demo must be placed in its own file inside the demos/ directory, using a clear and descriptive name.
+✅ Before creating a new demo, always check if a similar one already exists to avoid duplication.
+
+Avoid placing unrelated files in the root directory or into catch-all folders like misc/ or temp/.
+
+Use lowercase_with_underscores for file names. Avoid generic names like example.py or script1.py.
+
+If a folder becomes large or mixed in responsibility, split it into subfolders (e.g., services/api/, services/db/) to maintain single responsibility per folder.
+
+❗ Before creating any new file or folder, always check whether an appropriate one already exists — this helps prevent duplication and fragmentation across the codebase.
+
+Do not place non-code files loosely in the root. Follow this structure:
+
+README.md and LICENSE belong in root
+
+.json, .yaml, .csv, or .db files should go in a dedicated folder like configs/, data/, or storage/ depending on purpose
+
+Markdown files (.md) not intended as project-level docs (like README.md) should go into docs/ or notes/
+
+
+🧱 Rule: Project Structure — Backend, Frontend, and Database
+Top-level project organization must follow the separation of concerns between backend, frontend, and database components.
+
+Recommended Layout:
+primitives/
+├── agent/                    
+│   ├── __init__.py
+│   ├── sync_agent.py
+│   └── async_agent.py
+│
+├── pipes/                     
+│   ├── __init__.py
+│   ├── sync_pipe.py
+│   └── async_pipe.py
+│
+├── memory/                    
+│   ├── __init__.py
+│   ├── sync_memory.py
+│   └── async_memory.py
+│
+├── threads/                   
+│   ├── __init__.py
+│   ├── sync_thread.py
+│   └── async_thread.py
+│
+├── workflows/                 
+│   ├── __init__.py
+│   ├── sync_workflow.py
+│   └── async_workflow.py
+│
+├── sdk/                       # ★ new ergonomic SDK layer ★
+│   ├── __init__.py            # re-exports Langpy & get_runner
+│   ├── client.py              # Langpy root class (aggregates wrappers)
+│   ├── helpers.py             # get_runner(stream) + shared utils
+│   ├── agent_interface.py     # wraps agents.AsyncLangpyAgentPrimitive
+│   ├── pipe_interface.py      # wraps pipes.AsyncLangpyPipePrimitive
+│   ├── memory_interface.py    # wraps memory.AsyncLangpyMemoryPrimitive
+│   ├── thread_interface.py    # wraps threads.AsyncLangpyThreadPrimitive
+│   └── workflow_interface.py  # wraps workflows.AsyncLangpyWorkflowPrimitive
+│
+├── backend/                   # glue layer (unchanged)
+├── demos/                     # example scripts
+├── tests/                     # pytest suite
+├── database/                  # migrations / seed
+├── frontend/                  # UI code
+├── docs/                      # extra markdown docs
+├── data/                      # assets
+├── README.md
+└── requirements.txt
+
+────────────────────────────────────────────
+1. **One primitive per folder**  
+   • Each primitive folder **must contain both files**:  
+     - `sync_<primitive>.py` and `async_<primitive>.py`  
+   • Provide an `__init__.py` that exposes the public classes/functions.
+
+2. **No duplication / fragmentation**  
+   • Before creating a new file or folder, search the tree; if an appropriate file already exists, extend it instead of creating a parallel version.
+
+3. **Imports & references**  
+   • Backend glue _imports_ primitives; it never re-implements them.  
+   • Demos and tests also import primitives directly.
+
+4. **Naming conventions**  
+   • Use `snake_case` for every filename.  
+   • Class names use `PascalCase`.
+
+5. **Placement of non-code assets**  
+   • Place markdown docs in `docs/`, datasets in `data/`, DB files in `database/`.  
+   • Keep root clean: only `README.md`, `requirements.txt`, `.gitignore`, and project config files belong there.
+
+6. **Demo rule**  
+   • Each new demo goes in `demos/` as its own file. Check for an existing demo before adding a new one.
+
+7. **Test rule**  
+   • All tests live in `tests/` and mirror the primitive they cover (`test_pipe_async.py`, `test_pipe_sync.py`, etc.).
+
+WHEN RESPONDING
+────────────────────────────────────────────
+• If a user asks to create or modify a primitive, generate code in the correct `agents/`, `pipes/`, `memory/`, `threads/`, or `workflows/` folder and ensure both sync & async files stay in sync.  
+• If adding routes or background jobs, place them in `backend/` and rely on imported primitives.  
+• Always reflect the file path in code snippets (e.g. “**File: pipes/async_pipe.py**”).
+
+- Please after conclusion: 
+ 1) Always list the files that were affected by your run. 
+ 2) Always check if README.md needs to be updated accorindly. 
+
+- When you move a file to a different folder, always update the imports before proceeding to next step.
+
+- When building and improving a primitive always use a layered architecture pattern below: 
+         LAYERED ARCHITECTURE  (imports must flow ↓ only)
+      #   1.  user code  (examples / demos)              ← tiny, no logic
+      #           ↓
+      #   2.  sdk.client               – public façade that end-users import
+      #           ↓
+      #   3.  sdk.<primitive>_interface
+      #           • defines PrimitiveInterface / StepConfig-like models
+      #           • houses light decorators:  @primitive , @step , …
+      #           • **no heavy logic**, only validation + registration
+      #           ↓
+      #   4.  <primitive>/__init__.py
+      #           • implements the decorator bodies
+      #           • registers configs into engine’s registry
+      #           ↓
+      #   5.  <primitive>/async_primitive.py
+      #           • core async engine (execution, retries, timeouts, etc.)
+      #
+      # Replace <primitive> with pipe, agent, memory, workflow, etc.
+
+- Please ensure that after a primitive is updated, every demo file related to that primitive is updated accordingly. 
+
+- After any change to any codebase file (primitives, SDK, backend, etc.):
+    1. .The installable package (i.e., packaging artifacts, entry points, etc.) must be updated if needed.
+    2. The user-facing user_guide.md and .cursorrules (in langpy/docs/) must be updated to reflect any new/changed features, APIs, or usage instructions.
+
+- Before adding any new functionality to a primitive, please check first if it's not a role of another primitive. If so then don't but mention it in the conclusion. 
+
+- Every primitive has a _full_copy file that contains the full code of the primitive and it should be updated after any change of the primtive. 
+ However, this _full_copy does not have any impact in the running of primitive code, it's just documentation but in .py file. 
+
+ - Please never modify the .env file it's fixed and should stay that way. 

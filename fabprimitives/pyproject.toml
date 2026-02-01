@@ -1,0 +1,221 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+
+
+[project]
+name = "langpy"
+version = "2.0.0"
+description = "Langbase for Python - 9 composable AI primitives for building agents"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Mrfabm", email = "Mrfabm@users.noreply.github.com"}
+]
+maintainers = [
+    {name = "Mrfabm", email = "Mrfabm@users.noreply.github.com"}
+]
+keywords = ["ai", "agents", "llm", "langbase", "primitives", "workflows"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+requires-python = ">=3.9"
+dependencies = [
+    # Core framework
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0.0",
+    "python-dotenv>=1.0.0",
+    
+    # LLM providers
+    "openai>=1.0.0",
+    "anthropic>=0.7.0",
+    "mistralai>=0.0.10",
+    
+    # HTTP client
+    "httpx>=0.24.0",
+    "aiohttp>=3.8.0",
+    
+    # Validation and configuration
+    "jsonschema>=4.0.0",
+    "PyJWT>=2.0.0",
+    "PyYAML>=6.0.0",
+    "toml>=0.10.0",
+    
+    # Document parsing (core dependencies)
+    "PyPDF2>=3.0.0",
+    "python-docx>=0.8.11",
+    "openpyxl>=3.1.0",
+    "python-pptx>=0.6.21",
+    "beautifulsoup4>=4.12.0",
+    "markdown>=3.4.0",
+    "pillow>=10.0.0",
+    "pytesseract>=0.3.10",
+    "docling>=0.0.1",
+    "aiofiles>=23.0.0",
+    "python-magic>=0.4.27",
+    "requests>=2.31.0",
+    
+    # Vector storage
+    "pgvector>=0.2.0",
+    "faiss-cpu>=1.7.4",
+    "sentence-transformers>=2.2.0",
+    
+    # Web framework (for backend)
+    "fastapi>=0.100.0",
+    "uvicorn>=0.20.0",
+    "python-multipart>=0.0.6",
+    
+    # Database
+    "sqlalchemy>=2.0.0",
+    "alembic>=1.10.0",
+    "psycopg2-binary>=2.9.0",
+    "redis>=4.5.0",
+    "celery>=5.3.0",
+    
+    # Data processing
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    
+    # UI
+    "streamlit>=1.25.0",
+]
+
+[project.optional-dependencies]
+docs = [
+    "mkdocs",
+    "mkdocs-material",
+    "mkdocstrings[python]",
+]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "black",
+    "isort",
+    "flake8",
+    "mypy",
+]
+full = [
+    # Additional parsing capabilities
+    "pdfplumber>=0.9.0",
+    "camelot-py[cv]>=0.11.0",
+    "tabula-py>=2.7.0",
+    "tiktoken>=0.5.0",
+    "chardet>=5.0.0",
+    
+    # Additional database support
+    "asyncpg>=0.28.0",
+    
+    # Additional ML/AI
+    "transformers>=4.30.0",
+    "torch>=2.0.0",
+    "scikit-learn>=1.3.0",
+    
+    # Additional utilities
+    "click>=8.0.0",
+    "rich>=13.0.0",
+    "typer>=0.9.0",
+]
+all = [
+    "langpy[docs,dev,full]",
+]
+
+[project.urls]
+Homepage = "https://github.com/Mrfabm/langpy"
+Documentation = "https://github.com/Mrfabm/langpy#readme"
+Repository = "https://github.com/Mrfabm/langpy"
+Issues = "https://github.com/Mrfabm/langpy/issues"
+
+[project.scripts]
+langpy = "langpy.cli:main"
+langpy-init = "langpy.cli:init_project"
+langpy-setup-docs = "langpy.setup_docs:setup_docs"
+langpy-post-install = "langpy.post_install:post_install"
+
+[tool.setuptools.packages.find]
+include = [
+    "langpy*",
+    "agent*",
+    "analytics*",
+    "auth*",
+    "backend*",
+    "chunker*",
+    "embed*",
+    "experiments*",
+    "keysets*",
+    "memory*",
+    "parser*",
+    "pipe*",
+    "sdk*",
+    "stores*",
+    "thread*",
+    "tools*",
+    "versioning*",
+    "workflow*",
+]
+
+[tool.setuptools.package-data]
+"langpy" = ["docs/*.md", "docs/*.cursorrules", "docs/*.txt", "docs/__init__.py"]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.black]
+line-length = 88
+target-version = ['py39']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["langpy"]
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = [
+    "faiss.*",
+    "anthropic.*",
+    "mistralai.*",
+    "pdfplumber.*",
+    "docx.*",
+    "bs4.*",
+]
+ignore_missing_imports = true 
