@@ -1,944 +1,1479 @@
 # LangPy Extension Guide: Skills & MCP Servers
 
-This document outlines the extension architecture for LangPy, defining patterns that can be built as **Skills** (internal reusable patterns) or **MCP Servers** (external capabilities).
+This document defines how to extend LangPy using the **Agent Skills** open standard and **MCP Servers** for external capabilities.
 
 ## Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        LangPy                               │
-│  ┌───────────────────────────────────────────────────────┐  │
-│  │  CORE PRIMITIVES (9)                                  │  │
-│  │  Pipe, Agent, Memory, Thread, Workflow                │  │
-│  │  Parser, Chunker, Embed, Tools                        │  │
-│  │                                                       │  │
-│  │  These are the atoms - minimal, composable, stable    │  │
-│  └───────────────────────────────────────────────────────┘  │
-│  ┌───────────────────────────────────────────────────────┐  │
-│  │  SKILLS (Control Flow Patterns)                       │  │
-│  │  Loop, Router, Evaluator, Guard, Fallback, etc.       │  │
-│  │                                                       │  │
-│  │  Reusable compositions of core primitives             │  │
-│  │  No external dependencies, pure Python                │  │
-│  └───────────────────────────────────────────────────────┘  │
-└──────────────────────────┬──────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                          LangPy                                 │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │  CORE PRIMITIVES (9)                                      │  │
+│  │  Pipe, Agent, Memory, Thread, Workflow                    │  │
+│  │  Parser, Chunker, Embed, Tools                            │  │
+│  │                                                           │  │
+│  │  The atoms - minimal, composable, stable                  │  │
+│  └───────────────────────────────────────────────────────────┘  │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │  SKILLS (Agent Skills Standard)                           │  │
+│  │  Markdown instructions + optional scripts                 │  │
+│  │  Loop, Router, Evaluator, Guard, Fallback, etc.           │  │
+│  │                                                           │  │
+│  │  Portable, cross-platform, progressive disclosure         │  │
+│  └───────────────────────────────────────────────────────────┘  │
+└──────────────────────────┬──────────────────────────────────────┘
                            │ MCP Protocol
-┌──────────────────────────▼──────────────────────────────────┐
-│  MCP SERVERS (External Capabilities)                        │
-│  Queue, Cache, Scheduler, Human, Graph, Stream, etc.        │
-│                                                             │
-│  External services accessed via Model Context Protocol      │
-│  Can be self-hosted or cloud services                       │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────▼──────────────────────────────────────┐
+│  MCP SERVERS (External Capabilities)                            │
+│  Queue, Cache, Scheduler, Human, Graph, Stream, State, Bridge   │
+│                                                                 │
+│  External infrastructure accessed via Model Context Protocol    │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-## Design Principles
+## When to Use Skills vs MCP
 
-1. **Core primitives stay minimal** - Don't add to the 9 primitives unless absolutely necessary
-2. **Skills are compositions** - Built entirely from existing primitives
-3. **MCP for external state** - Anything requiring external infrastructure goes through MCP
-4. **Consistent interfaces** - All extensions follow similar patterns
+| Use Case | Solution | Why |
+|----------|----------|-----|
+| Control flow patterns | **Skill** | Instructions + scripts, no infrastructure |
+| LLM-driven decisions | **Skill** | Agent follows instructions |
+| External state/storage | **MCP** | Requires infrastructure |
+| Real-time communication | **MCP** | Requires persistent connections |
+| Third-party integrations | **MCP** | Requires API access |
+| Human-in-the-loop | **MCP** | Requires external UI/notification |
 
 ---
 
-# SKILLS (Internal Patterns)
+# SKILLS (Agent Skills Standard)
 
-Skills are reusable compositions of core primitives. They require no external dependencies.
+Skills follow the [Agent Skills open standard](https://agentskills.io) - a portable format adopted by Claude, Cursor, GitHub Copilot, and other AI tools.
 
-## 1. Loop Skill
+## Skill Structure
 
-**Purpose:** Iterate until a condition is met (not possible in DAG-based Workflow)
-
-**Why needed:** Workflow is acyclic - cannot express "retry until good"
-
-**Implementation approach:**
-```python
-from langpy_sdk import Pipe, Skill
-
-class LoopSkill(Skill):
-    """Execute a primitive repeatedly until condition is satisfied."""
-
-    def __init__(
-        self,
-        primitive,           # Pipe, Agent, or callable
-        condition: callable, # Function that returns True to stop
-        max_iterations: int = 10,
-        on_iteration: callable = None  # Optional callback
-    ):
-        self.primitive = primitive
-        self.condition = condition
-        self.max_iterations = max_iterations
-        self.on_iteration = on_iteration
-
-    async def run(self, initial_input):
-        result = initial_input
-        for i in range(self.max_iterations):
-            result = await self.primitive.quick(result)
-
-            if self.on_iteration:
-                self.on_iteration(i, result)
-
-            if self.condition(result):
-                return {"success": True, "result": result, "iterations": i + 1}
-
-        return {"success": False, "result": result, "iterations": self.max_iterations}
+```
+skill-name/
+├── SKILL.md              # Required: frontmatter + instructions
+├── scripts/              # Optional: executable code
+│   ├── loop.py
+│   └── evaluate.py
+├── references/           # Optional: detailed documentation
+│   └── patterns.md
+└── assets/               # Optional: templates, examples
+    └── examples.json
 ```
 
-**Usage example:**
+## SKILL.md Format
+
+```markdown
+---
+name: skill-name
+description: What this skill does and when to use it.
+license: MIT
+metadata:
+  author: langpy
+  version: "1.0"
+  primitives: [Pipe, Workflow]
+---
+
+## Overview
+
+Brief explanation of the skill.
+
+## When to Use
+
+- Condition 1
+- Condition 2
+
+## Instructions
+
+Step-by-step guide for the agent...
+
+## Examples
+
+Input/output examples...
+```
+
+### Frontmatter Fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Lowercase, hyphens only, max 64 chars |
+| `description` | Yes | What it does and when to use it, max 1024 chars |
+| `license` | No | License name or file reference |
+| `compatibility` | No | Environment requirements |
+| `metadata` | No | Custom key-value pairs (author, version, primitives used) |
+| `allowed-tools` | No | Pre-approved tools the skill may use |
+
+---
+
+## Skill Definitions
+
+### 1. Loop Skill
+
+**Purpose:** Iterate until a condition is met (Workflow is DAG-based, acyclic)
+
+```
+skills/
+└── loop/
+    ├── SKILL.md
+    └── scripts/
+        └── loop_executor.py
+```
+
+**SKILL.md:**
+```markdown
+---
+name: loop
+description: Execute a primitive repeatedly until a condition is satisfied. Use when you need iterative refinement, retry-until-success, or convergence patterns.
+metadata:
+  author: langpy
+  version: "1.0"
+  primitives: [Pipe, Agent, Workflow]
+---
+
+## Overview
+
+The Loop skill enables iterative execution patterns that aren't possible with
+Workflow's DAG-based structure. It wraps any primitive and repeats execution
+until a condition evaluates to true.
+
+## When to Use
+
+- Iterative refinement (generate → evaluate → improve → repeat)
+- Retry until quality threshold met
+- Convergence algorithms
+- Polling for external state changes
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| primitive | Pipe/Agent | Yes | The primitive to execute each iteration |
+| condition | string | Yes | Natural language condition for stopping |
+| max_iterations | int | No | Maximum iterations (default: 10) |
+| on_iteration | string | No | Action to take between iterations |
+
+## Instructions
+
+1. Initialize the loop with the target primitive and stopping condition
+2. Execute the primitive with the current input
+3. Evaluate the condition against the output
+4. If condition is TRUE → return the result
+5. If condition is FALSE and iterations < max → go to step 2
+6. If max iterations reached → return with partial result and warning
+
+## Condition Evaluation
+
+The condition should be a natural language description that you evaluate
+against the output. Examples:
+
+- "The response contains a valid JSON object"
+- "The quality score is above 0.8"
+- "The user has confirmed the action"
+- "No errors are present in the output"
+
+## Examples
+
+### Example 1: Iterative Refinement
+
+```
+Input:
+  primitive: Pipe(system="Improve this text")
+  initial: "AI is good"
+  condition: "The text is at least 100 words and professionally written"
+  max_iterations: 5
+
+Iteration 1:
+  Output: "Artificial intelligence is a transformative technology..."
+  Condition met: No (only 45 words)
+
+Iteration 2:
+  Output: "Artificial intelligence represents one of the most significant..."
+  Condition met: Yes (120 words, professional tone)
+
+Result: Final refined text after 2 iterations
+```
+
+### Example 2: Quality Gate
+
+```
+Input:
+  primitive: Agent(tools=[generate_report])
+  condition: "Report has executive summary, data tables, and conclusions"
+  max_iterations: 3
+
+Execution continues until report has all required sections.
+```
+
+## Edge Cases
+
+- If max_iterations is reached, return the best result with a warning
+- If primitive fails, capture error and retry (counts as iteration)
+- If condition is ambiguous, err on the side of continuing
+
+## Script Reference
+
+For deterministic loop execution, use:
+```
+scripts/loop_executor.py --primitive <name> --condition "<condition>" --max <n>
+```
+```
+
+**scripts/loop_executor.py:**
 ```python
-from langpy_sdk import Pipe
-from langpy.skills import LoopSkill
+#!/usr/bin/env python3
+"""
+Loop executor script for deterministic iteration control.
+"""
 
-refiner = Pipe(model="gpt-4o-mini", system="Improve this text")
-evaluator = lambda text: "excellent" in text.lower()
+import asyncio
+import argparse
+import json
+from typing import Any, Callable
 
-loop = LoopSkill(
-    primitive=refiner,
-    condition=evaluator,
-    max_iterations=5
-)
+async def execute_loop(
+    primitive_runner: Callable,
+    condition_checker: Callable,
+    initial_input: Any,
+    max_iterations: int = 10
+) -> dict:
+    """Execute a loop until condition is met."""
+    result = initial_input
 
-result = await loop.run("Write about AI")
+    for i in range(max_iterations):
+        # Execute primitive
+        result = await primitive_runner(result)
+
+        # Check condition
+        if condition_checker(result):
+            return {
+                "success": True,
+                "result": result,
+                "iterations": i + 1,
+                "converged": True
+            }
+
+    return {
+        "success": True,
+        "result": result,
+        "iterations": max_iterations,
+        "converged": False,
+        "warning": "Max iterations reached"
+    }
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--max", type=int, default=10)
+    parser.add_argument("--input", type=str, required=True)
+    args = parser.parse_args()
+
+    # Script entry point for CLI usage
+    print(json.dumps({"status": "ready", "max_iterations": args.max}))
 ```
 
 ---
 
-## 2. Router Skill
+### 2. Router Skill
 
 **Purpose:** Dynamic dispatch to different primitives based on input classification
 
-**Why needed:** Common pattern that requires boilerplate with Pipe.classify()
-
-**Implementation approach:**
-```python
-from langpy_sdk import Pipe, Skill
-
-class RouterSkill(Skill):
-    """Route inputs to specialized handlers based on classification."""
-
-    def __init__(
-        self,
-        routes: dict,           # {"category": primitive}
-        classifier: Pipe = None, # Optional custom classifier
-        default: str = None      # Default route if no match
-    ):
-        self.routes = routes
-        self.classifier = classifier or Pipe(model="gpt-4o-mini")
-        self.default = default
-
-    async def run(self, input_text: str):
-        # Classify the input
-        categories = list(self.routes.keys())
-        category = await self.classifier.classify(input_text, categories=categories)
-
-        # Route to appropriate handler
-        if category in self.routes:
-            handler = self.routes[category]
-            result = await handler.quick(input_text)
-            return {"category": category, "result": result}
-        elif self.default and self.default in self.routes:
-            handler = self.routes[self.default]
-            result = await handler.quick(input_text)
-            return {"category": self.default, "result": result, "fallback": True}
-        else:
-            return {"category": None, "error": "No matching route"}
+```
+skills/
+└── router/
+    ├── SKILL.md
+    └── references/
+        └── routing-strategies.md
 ```
 
-**Usage example:**
-```python
-from langpy_sdk import Pipe, Agent
-from langpy.skills import RouterSkill
+**SKILL.md:**
+```markdown
+---
+name: router
+description: Route inputs to specialized handlers based on classification. Use when different types of requests need different processing paths.
+metadata:
+  author: langpy
+  version: "1.0"
+  primitives: [Pipe, Agent]
+---
 
-router = RouterSkill(
-    routes={
-        "technical": Agent(model="gpt-4o-mini", tools=[search_docs, run_code]),
-        "creative": Pipe(model="gpt-4o-mini", system="You are a creative writer"),
-        "factual": Pipe(model="gpt-4o-mini", system="Give factual answers only"),
-    },
-    default="factual"
-)
+## Overview
 
-result = await router.run("Write me a poem about robots")
-# Routes to "creative" handler
+The Router skill classifies incoming requests and dispatches them to
+specialized primitives. It uses Pipe.classify() internally and supports
+fallback routes.
+
+## When to Use
+
+- Multi-domain assistants (technical vs creative vs factual)
+- Intent-based routing
+- Load distribution across specialized agents
+- A/B testing different approaches
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| routes | dict | Yes | Map of category → primitive |
+| default | string | No | Fallback category if no match |
+| confidence_threshold | float | No | Minimum confidence to route (0-1) |
+
+## Instructions
+
+1. Receive the input request
+2. Use Pipe.classify() with the route categories
+3. If classification confidence >= threshold → route to that handler
+4. If confidence < threshold → use default route or ask for clarification
+5. Execute the selected primitive
+6. Return result with routing metadata
+
+## Route Definition
+
+Define routes as a mapping of categories to primitives:
+
+```yaml
+routes:
+  technical:
+    primitive: Agent
+    tools: [search_docs, run_code]
+    system: "You are a technical expert"
+
+  creative:
+    primitive: Pipe
+    system: "You are a creative writer"
+
+  factual:
+    primitive: Pipe
+    system: "Give factual, sourced answers"
+```
+
+## Examples
+
+### Example 1: Support Router
+
+```
+Input: "My code is throwing a null pointer exception"
+
+Classification:
+  - technical: 0.92
+  - billing: 0.03
+  - general: 0.05
+
+Route: technical (confidence 0.92)
+Handler: Agent with debugging tools
+```
+
+### Example 2: Low Confidence
+
+```
+Input: "Help me with my thing"
+
+Classification:
+  - technical: 0.35
+  - creative: 0.30
+  - general: 0.35
+
+Confidence below threshold (0.7)
+Action: Use default route OR ask for clarification
+```
+
+## Routing Strategies
+
+See [references/routing-strategies.md](references/routing-strategies.md) for:
+- Round-robin routing
+- Load-based routing
+- Capability-based routing
+- Cascade routing (try primary, fall back to secondary)
 ```
 
 ---
 
-## 3. Evaluator Skill
+### 3. Evaluator Skill
 
-**Purpose:** Score/assess output quality with pass/fail threshold
+**Purpose:** Score and assess output quality with pass/fail threshold
 
-**Why needed:** Quality gates are common in agent pipelines
+```
+skills/
+└── evaluator/
+    ├── SKILL.md
+    ├── scripts/
+    │   └── score_parser.py
+    └── references/
+        └── evaluation-criteria.md
+```
 
-**Implementation approach:**
-```python
-from langpy_sdk import Pipe, Skill
+**SKILL.md:**
+```markdown
+---
+name: evaluator
+description: Evaluate content quality against criteria and return scores with pass/fail status. Use for quality gates, content moderation, or output validation.
+metadata:
+  author: langpy
+  version: "1.0"
+  primitives: [Pipe]
+---
 
-class EvaluatorSkill(Skill):
-    """Evaluate output quality and return score with pass/fail."""
+## Overview
 
-    def __init__(
-        self,
-        criteria: str,           # What to evaluate for
-        threshold: float = 0.7,  # Pass threshold (0-1)
-        model: str = "gpt-4o-mini"
-    ):
-        self.criteria = criteria
-        self.threshold = threshold
-        self.pipe = Pipe(model=model)
+The Evaluator skill assesses content against specified criteria, returning
+a normalized score (0-1) and pass/fail status based on a threshold.
 
-    async def run(self, content: str):
-        prompt = f"""Evaluate this content on a scale of 0-10.
+## When to Use
 
-Criteria: {self.criteria}
+- Quality gates in generation pipelines
+- Content moderation
+- Self-assessment in agent loops
+- A/B comparison of outputs
+- Regression testing for prompts
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| criteria | string | Yes | What to evaluate for |
+| threshold | float | No | Pass threshold 0-1 (default: 0.7) |
+| rubric | dict | No | Detailed scoring rubric |
+
+## Instructions
+
+1. Receive content to evaluate and criteria
+2. Construct evaluation prompt with criteria
+3. Use Pipe to generate structured assessment
+4. Parse score and reasoning from response
+5. Compare score against threshold
+6. Return evaluation result with metadata
+
+## Evaluation Prompt Template
+
+```
+Evaluate this content on a scale of 0-10.
+
+Criteria: {criteria}
 
 Content:
+---
 {content}
+---
 
 Respond with ONLY a JSON object:
-{{"score": <number 0-10>, "reasoning": "<brief explanation>"}}"""
-
-        response = await self.pipe.quick(prompt)
-        result = json.loads(response)
-
-        normalized_score = result["score"] / 10
-        return {
-            "score": normalized_score,
-            "passed": normalized_score >= self.threshold,
-            "reasoning": result["reasoning"],
-            "threshold": self.threshold
-        }
+{
+  "score": <number 0-10>,
+  "strengths": ["<strength 1>", "<strength 2>"],
+  "weaknesses": ["<weakness 1>", "<weakness 2>"],
+  "reasoning": "<brief explanation>"
+}
 ```
 
-**Usage example:**
-```python
-from langpy.skills import EvaluatorSkill, LoopSkill
-from langpy_sdk import Pipe
+## Examples
 
-evaluator = EvaluatorSkill(
-    criteria="Clear, concise, and technically accurate",
-    threshold=0.8
-)
+### Example 1: Writing Quality
 
-generator = Pipe(model="gpt-4o-mini")
-content = await generator.quick("Explain neural networks")
-result = await evaluator.run(content)
+```
+Criteria: "Clear, concise, and professionally written"
+Content: "AI is really really good and stuff..."
+Threshold: 0.7
 
-if not result["passed"]:
-    # Regenerate or refine
-    pass
+Result:
+{
+  "score": 0.3,
+  "passed": false,
+  "strengths": ["On topic"],
+  "weaknesses": ["Informal language", "Vague", "Repetitive"],
+  "reasoning": "Content lacks professional tone and specificity"
+}
+```
+
+### Example 2: Code Review
+
+```
+Criteria: "Follows best practices, handles errors, is well-documented"
+Content: <code snippet>
+Threshold: 0.8
+
+Result:
+{
+  "score": 0.85,
+  "passed": true,
+  "strengths": ["Good error handling", "Clear naming"],
+  "weaknesses": ["Missing docstring on helper function"],
+  "reasoning": "Solid code with minor documentation gap"
+}
+```
+
+## Rubric-Based Evaluation
+
+For complex evaluations, define a rubric:
+
+```yaml
+rubric:
+  accuracy:
+    weight: 0.4
+    description: "Factual correctness"
+  clarity:
+    weight: 0.3
+    description: "Easy to understand"
+  completeness:
+    weight: 0.3
+    description: "Covers all aspects"
+```
+
+Final score = weighted average of rubric dimensions.
 ```
 
 ---
 
-## 4. Guard Skill
+### 4. Guard Skill
 
-**Purpose:** Validate input/output against rules before/after primitive execution
+**Purpose:** Validate inputs and outputs against rules
 
-**Why needed:** Safety checks, format validation, content filtering
-
-**Implementation approach:**
-```python
-from langpy_sdk import Skill
-
-class GuardSkill(Skill):
-    """Validate inputs and outputs with custom rules."""
-
-    def __init__(
-        self,
-        primitive,
-        input_validators: list = None,   # Functions that validate input
-        output_validators: list = None,  # Functions that validate output
-        on_input_fail: str = "reject",   # "reject" | "sanitize" | "warn"
-        on_output_fail: str = "reject"
-    ):
-        self.primitive = primitive
-        self.input_validators = input_validators or []
-        self.output_validators = output_validators or []
-        self.on_input_fail = on_input_fail
-        self.on_output_fail = on_output_fail
-
-    async def run(self, input_data):
-        # Validate input
-        for validator in self.input_validators:
-            valid, message = validator(input_data)
-            if not valid:
-                if self.on_input_fail == "reject":
-                    return {"error": f"Input validation failed: {message}"}
-                elif self.on_input_fail == "warn":
-                    print(f"Warning: {message}")
-
-        # Execute primitive
-        result = await self.primitive.quick(input_data)
-
-        # Validate output
-        for validator in self.output_validators:
-            valid, message = validator(result)
-            if not valid:
-                if self.on_output_fail == "reject":
-                    return {"error": f"Output validation failed: {message}"}
-
-        return {"result": result, "validated": True}
+```
+skills/
+└── guard/
+    ├── SKILL.md
+    └── scripts/
+        └── validators.py
 ```
 
-**Usage example:**
-```python
-from langpy.skills import GuardSkill
-from langpy_sdk import Pipe
+**SKILL.md:**
+```markdown
+---
+name: guard
+description: Validate inputs and outputs against defined rules. Use for safety checks, format validation, PII detection, or content filtering.
+metadata:
+  author: langpy
+  version: "1.0"
+  primitives: [Pipe]
+---
 
-def no_pii(text):
-    # Check for email patterns, SSN, etc.
-    import re
-    if re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', text):
-        return False, "Contains email address"
+## Overview
+
+The Guard skill wraps primitives with input and output validation. It can
+reject, sanitize, or warn based on validation results.
+
+## When to Use
+
+- PII detection and removal
+- Content policy enforcement
+- Format validation (JSON, email, etc.)
+- Length limits
+- Profanity filtering
+- Prompt injection detection
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| input_rules | list | No | Validators for input |
+| output_rules | list | No | Validators for output |
+| on_input_fail | string | No | "reject", "sanitize", or "warn" |
+| on_output_fail | string | No | "reject", "sanitize", or "warn" |
+
+## Built-in Validators
+
+| Validator | Description |
+|-----------|-------------|
+| no_pii | Detects emails, SSNs, phone numbers |
+| max_length(n) | Enforces character limit |
+| valid_json | Checks JSON parsability |
+| no_profanity | Filters inappropriate language |
+| no_injection | Detects prompt injection attempts |
+| matches_schema(s) | Validates against JSON schema |
+
+## Instructions
+
+1. Receive input and validation rules
+2. Run input through each input validator
+3. If any fails:
+   - reject: Return error immediately
+   - sanitize: Attempt to fix and continue
+   - warn: Log warning and continue
+4. Execute the wrapped primitive
+5. Run output through each output validator
+6. Apply same fail strategy for output
+7. Return result with validation metadata
+
+## Examples
+
+### Example 1: PII Guard
+
+```
+Input: "My email is john@example.com and SSN is 123-45-6789"
+
+Input Validators: [no_pii]
+On Fail: sanitize
+
+Sanitized Input: "My email is [EMAIL] and SSN is [SSN]"
+
+→ Primitive executes with sanitized input
+→ Output checked for PII before returning
+```
+
+### Example 2: Format Guard
+
+```
+Input: "Generate a JSON config"
+
+Output Validators: [valid_json, matches_schema(config_schema)]
+On Fail: reject
+
+Output: "{ invalid json }"
+
+Result: {
+  "error": "Output validation failed",
+  "validator": "valid_json",
+  "message": "Invalid JSON: unexpected token"
+}
+```
+
+## Custom Validators
+
+Define custom validators in scripts/validators.py:
+
+```python
+def no_competitor_mentions(text: str) -> tuple[bool, str]:
+    competitors = ["CompetitorA", "CompetitorB"]
+    for c in competitors:
+        if c.lower() in text.lower():
+            return False, f"Contains competitor mention: {c}"
     return True, "OK"
+```
+```
 
-def max_length(text):
-    if len(text) > 1000:
-        return False, "Response too long"
-    return True, "OK"
+---
 
-guarded_pipe = GuardSkill(
-    primitive=Pipe(model="gpt-4o-mini"),
-    input_validators=[no_pii],
-    output_validators=[max_length, no_pii]
+### 5. Fallback Skill
+
+**Purpose:** Try primary handler, fall back to alternatives on failure
+
+```
+skills/
+└── fallback/
+    └── SKILL.md
+```
+
+**SKILL.md:**
+```markdown
+---
+name: fallback
+description: Execute primitives in order until one succeeds. Use for resilience, model fallbacks, or graceful degradation.
+metadata:
+  author: langpy
+  version: "1.0"
+  primitives: [Pipe, Agent]
+---
+
+## Overview
+
+The Fallback skill provides resilience by trying multiple primitives in
+sequence until one succeeds.
+
+## When to Use
+
+- Model fallbacks (GPT-4 → GPT-3.5 → local model)
+- Service resilience
+- Graceful degradation
+- Cost optimization (try cheap first, fall back to expensive)
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| primitives | list | Yes | Ordered list of primitives to try |
+| catch | list | No | Exception types to catch (default: all) |
+| on_fallback | string | No | Action when falling back |
+
+## Instructions
+
+1. Receive input and ordered list of primitives
+2. Try first primitive
+3. If success → return result with index 0
+4. If failure → log error, try next primitive
+5. Repeat until success or all primitives exhausted
+6. Return result with fallback metadata
+
+## Examples
+
+### Example 1: Model Fallback
+
+```
+Primitives:
+  1. Pipe(model="gpt-4o")
+  2. Pipe(model="gpt-4o-mini")
+  3. Pipe(model="gpt-3.5-turbo")
+
+Attempt 1: gpt-4o → Rate limit error
+Attempt 2: gpt-4o-mini → Success
+
+Result: {
+  "result": "...",
+  "primitive_index": 1,
+  "fallback_used": true,
+  "attempts": 2
+}
+```
+
+### Example 2: Strategy Fallback
+
+```
+Primitives:
+  1. Agent(tools=[web_search])  # Try real-time data
+  2. Agent(tools=[knowledge_base])  # Fall back to cached
+  3. Pipe(system="Answer from training data")  # Last resort
+
+Gracefully degrades from live data to cached to parametric knowledge.
+```
+```
+
+---
+
+### 6. Aggregator Skill
+
+**Purpose:** Combine outputs from parallel executions
+
+```
+skills/
+└── aggregator/
+    └── SKILL.md
+```
+
+**SKILL.md:**
+```markdown
+---
+name: aggregator
+description: Execute multiple primitives in parallel and combine results. Use for ensemble methods, multi-perspective analysis, or parallel processing.
+metadata:
+  author: langpy
+  version: "1.0"
+  primitives: [Pipe, Agent, Workflow]
+---
+
+## Overview
+
+The Aggregator skill runs multiple primitives in parallel and combines
+their outputs using a specified strategy.
+
+## When to Use
+
+- Ensemble responses (multiple models, take consensus)
+- Multi-perspective analysis
+- Parallel data processing
+- Reducing variance in outputs
+
+## Aggregation Strategies
+
+| Strategy | Description |
+|----------|-------------|
+| all | Return all results as a list |
+| first | Return first successful result |
+| majority | Return most common result (for discrete outputs) |
+| concat | Concatenate all outputs |
+| synthesize | Use LLM to synthesize results |
+| custom | User-defined aggregation function |
+
+## Instructions
+
+1. Receive input and list of primitives
+2. Execute all primitives in parallel (asyncio.gather)
+3. Collect results, noting any failures
+4. Apply aggregation strategy
+5. Return combined result with metadata
+
+## Examples
+
+### Example 1: Multi-Perspective
+
+```
+Primitives:
+  - Pipe(system="You are an optimist")
+  - Pipe(system="You are a pessimist")
+  - Pipe(system="You are a realist")
+
+Strategy: synthesize
+
+Input: "What's the future of remote work?"
+
+Parallel Outputs:
+  - Optimist: "Remote work will become universal..."
+  - Pessimist: "Companies will force return to office..."
+  - Realist: "Hybrid models will dominate..."
+
+Synthesized Result: "Perspectives vary on remote work's future.
+Optimists see universal adoption, pessimists predict office returns,
+while realists expect hybrid models to prevail. The likely outcome
+is industry-dependent hybrid arrangements."
+```
+
+### Example 2: Majority Vote
+
+```
+Primitives: [Pipe(...), Pipe(...), Pipe(...)]  # Same prompt, 3x
+Strategy: majority
+
+Input: "Is this email spam? Answer: yes or no"
+
+Outputs: ["yes", "yes", "no"]
+Result: "yes" (2/3 majority)
+```
+```
+
+---
+
+### 7. Retry Skill
+
+**Purpose:** Sophisticated retry with backoff and conditions
+
+```
+skills/
+└── retry/
+    ├── SKILL.md
+    └── scripts/
+        └── backoff.py
+```
+
+**SKILL.md:**
+```markdown
+---
+name: retry
+description: Retry primitive execution with exponential backoff and custom conditions. Use for handling transient failures and rate limits.
+metadata:
+  author: langpy
+  version: "1.0"
+  primitives: [Pipe, Agent]
+---
+
+## Overview
+
+The Retry skill provides sophisticated retry logic with exponential backoff,
+jitter, and conditional retry based on error types or output content.
+
+## When to Use
+
+- API rate limit handling
+- Transient network failures
+- Flaky external services
+- Output quality retries
+
+## Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| max_retries | int | No | Maximum retry attempts (default: 3) |
+| backoff_base | float | No | Initial wait seconds (default: 1.0) |
+| backoff_multiplier | float | No | Multiplier per retry (default: 2.0) |
+| max_backoff | float | No | Maximum wait seconds (default: 60) |
+| jitter | bool | No | Add randomness to backoff (default: true) |
+| retry_on | list | No | Error types to retry on |
+| retry_if | string | No | Condition to trigger retry |
+
+## Backoff Calculation
+
+```
+wait_time = min(
+  backoff_base * (backoff_multiplier ** attempt),
+  max_backoff
 )
 
-result = await guarded_pipe.run("Tell me about AI")
+if jitter:
+  wait_time = wait_time * random(0.5, 1.5)
 ```
 
----
+## Examples
 
-## 5. Fallback Skill
+### Example 1: Rate Limit Handling
 
-**Purpose:** Try primary primitive, fall back to alternatives on failure
+```
+Parameters:
+  max_retries: 5
+  backoff_base: 1.0
+  backoff_multiplier: 2.0
+  retry_on: [RateLimitError]
 
-**Why needed:** Resilience patterns, model fallbacks, graceful degradation
+Attempt 1: RateLimitError → wait 1s
+Attempt 2: RateLimitError → wait 2s
+Attempt 3: RateLimitError → wait 4s
+Attempt 4: Success
 
-**Implementation approach:**
-```python
-from langpy_sdk import Skill
-
-class FallbackSkill(Skill):
-    """Try primitives in order until one succeeds."""
-
-    def __init__(
-        self,
-        primitives: list,        # Ordered list of primitives to try
-        catch_exceptions: bool = True,
-        on_fallback: callable = None  # Callback when falling back
-    ):
-        self.primitives = primitives
-        self.catch_exceptions = catch_exceptions
-        self.on_fallback = on_fallback
-
-    async def run(self, input_data):
-        errors = []
-
-        for i, primitive in enumerate(self.primitives):
-            try:
-                result = await primitive.quick(input_data)
-                return {
-                    "result": result,
-                    "primitive_index": i,
-                    "fallback_used": i > 0,
-                    "errors": errors
-                }
-            except Exception as e:
-                errors.append({"index": i, "error": str(e)})
-                if self.on_fallback:
-                    self.on_fallback(i, e)
-                if not self.catch_exceptions:
-                    raise
-
-        return {"error": "All primitives failed", "errors": errors}
+Result includes retry metadata.
 ```
 
-**Usage example:**
-```python
-from langpy.skills import FallbackSkill
-from langpy_sdk import Pipe
+### Example 2: Quality Retry
 
-fallback = FallbackSkill([
-    Pipe(model="gpt-4o"),        # Try best model first
-    Pipe(model="gpt-4o-mini"),   # Fall back to faster model
-    Pipe(model="gpt-3.5-turbo"), # Last resort
-])
-
-result = await fallback.run("Complex reasoning task")
 ```
+Parameters:
+  max_retries: 3
+  retry_if: "Response is less than 50 words"
 
----
-
-## 6. Aggregator Skill
-
-**Purpose:** Combine outputs from parallel branches with configurable strategy
-
-**Why needed:** Workflow runs parallel steps but combining results is manual
-
-**Implementation approach:**
-```python
-from langpy_sdk import Skill
-import asyncio
-
-class AggregatorSkill(Skill):
-    """Run primitives in parallel and aggregate results."""
-
-    def __init__(
-        self,
-        primitives: list,
-        strategy: str = "all",  # "all" | "first" | "majority" | "custom"
-        custom_aggregator: callable = None
-    ):
-        self.primitives = primitives
-        self.strategy = strategy
-        self.custom_aggregator = custom_aggregator
-
-    async def run(self, input_data):
-        # Run all primitives in parallel
-        tasks = [p.quick(input_data) for p in self.primitives]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        # Filter out exceptions
-        successful = [r for r in results if not isinstance(r, Exception)]
-        errors = [r for r in results if isinstance(r, Exception)]
-
-        if self.strategy == "all":
-            return {"results": successful, "errors": errors}
-
-        elif self.strategy == "first":
-            return {"result": successful[0] if successful else None}
-
-        elif self.strategy == "majority":
-            # Count occurrences and return most common
-            from collections import Counter
-            counts = Counter(successful)
-            return {"result": counts.most_common(1)[0][0]}
-
-        elif self.strategy == "custom" and self.custom_aggregator:
-            return {"result": self.custom_aggregator(successful)}
-
-        return {"results": successful}
+Attempt 1: "AI is good." (4 words) → retry
+Attempt 2: "Artificial intelligence is..." (48 words) → retry
+Attempt 3: "Artificial intelligence represents..." (120 words) → success
 ```
-
-**Usage example:**
-```python
-from langpy.skills import AggregatorSkill
-from langpy_sdk import Pipe
-
-# Get multiple perspectives and combine
-aggregator = AggregatorSkill(
-    primitives=[
-        Pipe(model="gpt-4o-mini", system="You are an optimist"),
-        Pipe(model="gpt-4o-mini", system="You are a pessimist"),
-        Pipe(model="gpt-4o-mini", system="You are a realist"),
-    ],
-    strategy="custom",
-    custom_aggregator=lambda results: "\n\n".join(results)
-)
-
-result = await aggregator.run("What's the future of AI?")
-```
-
----
-
-## 7. Retry Skill
-
-**Purpose:** Retry with configurable backoff and conditions
-
-**Why needed:** More sophisticated than Workflow's simple retry count
-
-**Implementation approach:**
-```python
-from langpy_sdk import Skill
-import asyncio
-
-class RetrySkill(Skill):
-    """Retry with exponential backoff and custom conditions."""
-
-    def __init__(
-        self,
-        primitive,
-        max_retries: int = 3,
-        backoff_base: float = 1.0,      # Seconds
-        backoff_multiplier: float = 2.0,
-        retry_on: list = None,          # Exception types to retry on
-        retry_if: callable = None       # Custom condition
-    ):
-        self.primitive = primitive
-        self.max_retries = max_retries
-        self.backoff_base = backoff_base
-        self.backoff_multiplier = backoff_multiplier
-        self.retry_on = retry_on or [Exception]
-        self.retry_if = retry_if
-
-    async def run(self, input_data):
-        last_error = None
-
-        for attempt in range(self.max_retries + 1):
-            try:
-                result = await self.primitive.quick(input_data)
-
-                # Check custom retry condition
-                if self.retry_if and self.retry_if(result):
-                    raise ValueError("Retry condition met")
-
-                return {
-                    "result": result,
-                    "attempts": attempt + 1,
-                    "retried": attempt > 0
-                }
-
-            except tuple(self.retry_on) as e:
-                last_error = e
-                if attempt < self.max_retries:
-                    wait_time = self.backoff_base * (self.backoff_multiplier ** attempt)
-                    await asyncio.sleep(wait_time)
-
-        return {"error": str(last_error), "attempts": self.max_retries + 1}
 ```
 
 ---
 
 # MCP SERVERS (External Capabilities)
 
-MCP Servers provide external capabilities via Model Context Protocol. These require infrastructure.
+MCP Servers provide capabilities that require external infrastructure. These are accessed via [Model Context Protocol](https://modelcontextprotocol.io).
+
+**When Skills aren't enough:**
+- Persistent state across sessions
+- Real-time communication
+- External service integration
+- Human interaction
+
+---
 
 ## 1. Queue MCP Server
 
 **Purpose:** Async message passing between agents/primitives
 
-**Infrastructure:** Redis, RabbitMQ, or SQS
+**Infrastructure:** Redis, RabbitMQ, SQS, or Kafka
 
-**MCP Interface:**
-```python
-# MCP Tool definitions
-tools = [
-    {
-        "name": "queue_publish",
-        "description": "Publish a message to a queue",
-        "parameters": {
-            "queue_name": {"type": "string"},
-            "message": {"type": "string"},
-            "priority": {"type": "integer", "default": 0}
-        }
-    },
-    {
-        "name": "queue_consume",
-        "description": "Consume a message from a queue",
-        "parameters": {
-            "queue_name": {"type": "string"},
-            "timeout": {"type": "integer", "default": 30}
-        }
-    },
-    {
-        "name": "queue_length",
-        "description": "Get the number of messages in a queue",
-        "parameters": {
-            "queue_name": {"type": "string"}
-        }
-    }
-]
+**Why MCP:** Requires persistent message broker infrastructure
+
+### MCP Tools
+
+```yaml
+tools:
+  - name: queue_publish
+    description: Publish a message to a queue
+    parameters:
+      queue_name: string (required)
+      message: string (required)
+      priority: integer (default: 0)
+      delay_seconds: integer (default: 0)
+
+  - name: queue_consume
+    description: Consume messages from a queue
+    parameters:
+      queue_name: string (required)
+      count: integer (default: 1)
+      timeout_seconds: integer (default: 30)
+
+  - name: queue_length
+    description: Get queue depth
+    parameters:
+      queue_name: string (required)
 ```
 
-**Use cases:**
-- Agent-to-agent communication
-- Work distribution
+### Use Cases
+
+- Agent-to-agent task delegation
+- Work distribution across agent pool
 - Event-driven pipelines
+- Decoupled async processing
+
+### Example Implementation
+
+```python
+# mcp_servers/queue_server.py
+from mcp import MCPServer
+import redis
+
+class QueueMCPServer(MCPServer):
+    def __init__(self, redis_url: str):
+        self.redis = redis.from_url(redis_url)
+
+    async def queue_publish(self, queue_name: str, message: str, priority: int = 0):
+        self.redis.lpush(queue_name, message)
+        return {"status": "published", "queue": queue_name}
+
+    async def queue_consume(self, queue_name: str, timeout_seconds: int = 30):
+        result = self.redis.brpop(queue_name, timeout=timeout_seconds)
+        if result:
+            return {"message": result[1].decode(), "queue": queue_name}
+        return {"message": None, "timeout": True}
+```
 
 ---
 
 ## 2. Cache MCP Server
 
-**Purpose:** Memoize expensive LLM calls
+**Purpose:** Memoize expensive LLM calls and embeddings
 
-**Infrastructure:** Redis, Memcached
+**Infrastructure:** Redis, Memcached, or DynamoDB
 
-**MCP Interface:**
-```python
-tools = [
-    {
-        "name": "cache_get",
-        "description": "Get a cached value",
-        "parameters": {
-            "key": {"type": "string"}
-        }
-    },
-    {
-        "name": "cache_set",
-        "description": "Set a cached value with TTL",
-        "parameters": {
-            "key": {"type": "string"},
-            "value": {"type": "string"},
-            "ttl_seconds": {"type": "integer", "default": 3600}
-        }
-    },
-    {
-        "name": "cache_delete",
-        "description": "Delete a cached value",
-        "parameters": {
-            "key": {"type": "string"}
-        }
-    }
-]
+**Why MCP:** Requires persistent cache storage
+
+### MCP Tools
+
+```yaml
+tools:
+  - name: cache_get
+    description: Retrieve cached value
+    parameters:
+      key: string (required)
+
+  - name: cache_set
+    description: Store value with TTL
+    parameters:
+      key: string (required)
+      value: string (required)
+      ttl_seconds: integer (default: 3600)
+
+  - name: cache_delete
+    description: Remove cached value
+    parameters:
+      key: string (required)
+
+  - name: cache_exists
+    description: Check if key exists
+    parameters:
+      key: string (required)
 ```
 
-**Use cases:**
-- Cache embeddings
+### Use Cases
+
 - Cache LLM responses for common queries
+- Store computed embeddings
 - Reduce API costs
+- Speed up repeated operations
+
+### Cache Key Strategies
+
+```
+# For LLM calls
+key = hash(model + system_prompt + user_message + temperature)
+
+# For embeddings
+key = hash(model + text)
+
+# For search results
+key = hash(query + filters + limit)
+```
 
 ---
 
-## 3. Scheduler MCP Server
+## 3. Human MCP Server
+
+**Purpose:** Human-in-the-loop approval and input
+
+**Infrastructure:** Slack, Email, Web UI, or custom approval system
+
+**Why MCP:** Requires external notification/approval interface
+
+### MCP Tools
+
+```yaml
+tools:
+  - name: human_approve
+    description: Request human approval for an action
+    parameters:
+      request_id: string (required)
+      title: string (required)
+      description: string (required)
+      options: array of strings (default: ["Approve", "Reject"])
+      timeout_minutes: integer (default: 60)
+      channel: string (enum: slack, email, ui)
+      assignee: string (optional)
+
+  - name: human_input
+    description: Request freeform input from human
+    parameters:
+      request_id: string (required)
+      prompt: string (required)
+      input_type: string (enum: text, choice, file)
+      timeout_minutes: integer (default: 60)
+
+  - name: human_notify
+    description: Send notification (no response needed)
+    parameters:
+      message: string (required)
+      channel: string (required)
+      priority: string (enum: low, normal, high, urgent)
+
+  - name: human_check
+    description: Check status of pending request
+    parameters:
+      request_id: string (required)
+```
+
+### Use Cases
+
+- Approval workflows for sensitive actions
+- Content moderation
+- Exception handling escalation
+- Quality assurance checkpoints
+
+### Example Flow
+
+```
+1. Agent encounters high-risk action
+2. Calls human_approve with details
+3. Human receives Slack message
+4. Human clicks Approve/Reject
+5. Agent receives response and continues
+```
+
+---
+
+## 4. Graph MCP Server
+
+**Purpose:** Relationship-based memory (beyond vector similarity)
+
+**Infrastructure:** Neo4j, Amazon Neptune, TigerGraph, or Memgraph
+
+**Why MCP:** Requires graph database infrastructure
+
+### MCP Tools
+
+```yaml
+tools:
+  - name: graph_add_node
+    description: Create a node
+    parameters:
+      node_type: string (required)
+      properties: object (required)
+      id: string (optional, auto-generated if not provided)
+
+  - name: graph_add_edge
+    description: Create relationship between nodes
+    parameters:
+      from_id: string (required)
+      to_id: string (required)
+      relationship: string (required)
+      properties: object (optional)
+
+  - name: graph_query
+    description: Query the graph
+    parameters:
+      query: string (required)
+      query_type: string (enum: cypher, natural, pattern)
+      parameters: object (optional)
+
+  - name: graph_traverse
+    description: Traverse from a starting node
+    parameters:
+      start_id: string (required)
+      relationship_types: array (optional)
+      direction: string (enum: outgoing, incoming, both)
+      max_depth: integer (default: 3)
+
+  - name: graph_find_path
+    description: Find path between nodes
+    parameters:
+      from_id: string (required)
+      to_id: string (required)
+      max_hops: integer (default: 5)
+```
+
+### Use Cases
+
+- Knowledge graphs
+- Entity relationship mapping
+- Multi-hop reasoning
+- Recommendation systems
+- Dependency analysis
+
+### Graph vs Vector Memory
+
+| Use Case | Vector (Memory) | Graph |
+|----------|-----------------|-------|
+| "Find similar documents" | ✅ | ❌ |
+| "What is X related to?" | ❌ | ✅ |
+| "How is A connected to B?" | ❌ | ✅ |
+| "Find documents about X" | ✅ | ⚠️ |
+| "What depends on X?" | ❌ | ✅ |
+
+---
+
+## 5. State MCP Server
+
+**Purpose:** Persistent state machines for complex flows
+
+**Infrastructure:** Redis, PostgreSQL, or DynamoDB
+
+**Why MCP:** Requires persistent state storage across sessions
+
+### MCP Tools
+
+```yaml
+tools:
+  - name: state_create
+    description: Create new state machine instance
+    parameters:
+      machine_id: string (required)
+      definition: string (required, state machine name)
+      initial_context: object (optional)
+
+  - name: state_transition
+    description: Trigger state transition
+    parameters:
+      machine_id: string (required)
+      event: string (required)
+      data: object (optional)
+
+  - name: state_get
+    description: Get current state and context
+    parameters:
+      machine_id: string (required)
+
+  - name: state_history
+    description: Get transition history
+    parameters:
+      machine_id: string (required)
+      limit: integer (default: 100)
+
+  - name: state_list
+    description: List active state machines
+    parameters:
+      definition: string (optional, filter by type)
+      state: string (optional, filter by current state)
+```
+
+### State Machine Definition
+
+```yaml
+name: order-fulfillment
+states:
+  - pending
+  - processing
+  - shipped
+  - delivered
+  - cancelled
+
+initial: pending
+
+transitions:
+  - from: pending
+    to: processing
+    event: start_processing
+
+  - from: processing
+    to: shipped
+    event: ship_order
+
+  - from: shipped
+    to: delivered
+    event: confirm_delivery
+
+  - from: [pending, processing]
+    to: cancelled
+    event: cancel_order
+```
+
+### Use Cases
+
+- Order processing workflows
+- Document approval flows
+- Multi-step onboarding
+- Long-running agent tasks
+
+---
+
+## 6. Bridge MCP Server
+
+**Purpose:** Inter-agent communication and coordination
+
+**Infrastructure:** WebSocket server, gRPC, or message broker
+
+**Why MCP:** Requires real-time agent-to-agent communication
+
+### MCP Tools
+
+```yaml
+tools:
+  - name: bridge_register
+    description: Register agent with bridge
+    parameters:
+      agent_id: string (required)
+      capabilities: array of strings (required)
+      metadata: object (optional)
+
+  - name: bridge_send
+    description: Send message to another agent
+    parameters:
+      to_agent: string (required)
+      message_type: string (required)
+      payload: object (required)
+      wait_response: boolean (default: false)
+      timeout_seconds: integer (default: 30)
+
+  - name: bridge_broadcast
+    description: Broadcast to agents with capability
+    parameters:
+      capability: string (required)
+      message_type: string (required)
+      payload: object (required)
+
+  - name: bridge_discover
+    description: Find agents with capability
+    parameters:
+      capability: string (required)
+
+  - name: bridge_subscribe
+    description: Subscribe to message types
+    parameters:
+      message_types: array of strings (required)
+```
+
+### Use Cases
+
+- Multi-agent collaboration
+- Agent delegation
+- Swarm coordination
+- Service mesh for agents
+
+### Example: Agent Delegation
+
+```
+Coordinator Agent:
+  1. bridge_discover("code_review")
+  2. Finds: [agent-1, agent-2, agent-3]
+  3. bridge_send(to="agent-1", type="review_request", payload={...})
+  4. Waits for response
+  5. Aggregates results from delegated agents
+```
+
+---
+
+## 7. Scheduler MCP Server
 
 **Purpose:** Time-based and event-based triggers
 
-**Infrastructure:** Cron, Celery, or cloud schedulers
+**Infrastructure:** Celery, APScheduler, or cloud schedulers
 
-**MCP Interface:**
-```python
-tools = [
-    {
-        "name": "schedule_once",
-        "description": "Schedule a one-time job",
-        "parameters": {
-            "job_id": {"type": "string"},
-            "run_at": {"type": "string", "format": "datetime"},
-            "payload": {"type": "object"}
-        }
-    },
-    {
-        "name": "schedule_recurring",
-        "description": "Schedule a recurring job",
-        "parameters": {
-            "job_id": {"type": "string"},
-            "cron_expression": {"type": "string"},
-            "payload": {"type": "object"}
-        }
-    },
-    {
-        "name": "schedule_cancel",
-        "description": "Cancel a scheduled job",
-        "parameters": {
-            "job_id": {"type": "string"}
-        }
-    }
-]
+**Why MCP:** Requires persistent job scheduling
+
+### MCP Tools
+
+```yaml
+tools:
+  - name: schedule_once
+    description: Schedule one-time job
+    parameters:
+      job_id: string (required)
+      run_at: datetime string (required)
+      action: string (required)
+      payload: object (optional)
+
+  - name: schedule_recurring
+    description: Schedule recurring job
+    parameters:
+      job_id: string (required)
+      cron: string (required, cron expression)
+      action: string (required)
+      payload: object (optional)
+
+  - name: schedule_cancel
+    description: Cancel scheduled job
+    parameters:
+      job_id: string (required)
+
+  - name: schedule_list
+    description: List scheduled jobs
+    parameters:
+      status: string (optional, enum: pending, running, completed)
 ```
 
-**Use cases:**
+### Use Cases
+
 - Periodic data ingestion
 - Scheduled reports
+- Reminder systems
 - Delayed actions
 
 ---
 
-## 4. Human MCP Server
+## 8. Stream MCP Server
 
-**Purpose:** Human-in-the-loop approval/input
-
-**Infrastructure:** Slack, Email, Web UI, or custom approval system
-
-**MCP Interface:**
-```python
-tools = [
-    {
-        "name": "human_approve",
-        "description": "Request human approval for an action",
-        "parameters": {
-            "request_id": {"type": "string"},
-            "description": {"type": "string"},
-            "options": {"type": "array", "items": {"type": "string"}},
-            "timeout_minutes": {"type": "integer", "default": 60},
-            "channel": {"type": "string", "enum": ["slack", "email", "ui"]}
-        }
-    },
-    {
-        "name": "human_input",
-        "description": "Request freeform input from a human",
-        "parameters": {
-            "request_id": {"type": "string"},
-            "prompt": {"type": "string"},
-            "timeout_minutes": {"type": "integer", "default": 60}
-        }
-    },
-    {
-        "name": "human_notify",
-        "description": "Send a notification to a human (no response needed)",
-        "parameters": {
-            "message": {"type": "string"},
-            "channel": {"type": "string"},
-            "priority": {"type": "string", "enum": ["low", "normal", "high"]}
-        }
-    }
-]
-```
-
-**Use cases:**
-- Approval workflows
-- Content moderation
-- Exception handling
-- Quality assurance
-
----
-
-## 5. Graph MCP Server
-
-**Purpose:** Relationship-based memory (beyond vector similarity)
-
-**Infrastructure:** Neo4j, Amazon Neptune, or TigerGraph
-
-**MCP Interface:**
-```python
-tools = [
-    {
-        "name": "graph_add_node",
-        "description": "Add a node to the graph",
-        "parameters": {
-            "node_type": {"type": "string"},
-            "properties": {"type": "object"}
-        }
-    },
-    {
-        "name": "graph_add_edge",
-        "description": "Add a relationship between nodes",
-        "parameters": {
-            "from_node": {"type": "string"},
-            "to_node": {"type": "string"},
-            "relationship": {"type": "string"},
-            "properties": {"type": "object"}
-        }
-    },
-    {
-        "name": "graph_query",
-        "description": "Query the graph with Cypher or natural language",
-        "parameters": {
-            "query": {"type": "string"},
-            "query_type": {"type": "string", "enum": ["cypher", "natural"]}
-        }
-    },
-    {
-        "name": "graph_traverse",
-        "description": "Traverse relationships from a starting node",
-        "parameters": {
-            "start_node": {"type": "string"},
-            "relationship_types": {"type": "array"},
-            "max_depth": {"type": "integer", "default": 3}
-        }
-    }
-]
-```
-
-**Use cases:**
-- Knowledge graphs
-- Entity relationships
-- Reasoning over connections
-- Multi-hop queries
-
----
-
-## 6. Stream MCP Server
-
-**Purpose:** Real-time event streaming between components
+**Purpose:** Real-time event streaming
 
 **Infrastructure:** Kafka, Redis Streams, or Pulsar
 
-**MCP Interface:**
-```python
-tools = [
-    {
-        "name": "stream_publish",
-        "description": "Publish an event to a stream",
-        "parameters": {
-            "stream_name": {"type": "string"},
-            "event_type": {"type": "string"},
-            "data": {"type": "object"}
-        }
-    },
-    {
-        "name": "stream_subscribe",
-        "description": "Subscribe to events from a stream",
-        "parameters": {
-            "stream_name": {"type": "string"},
-            "event_types": {"type": "array"},
-            "from_position": {"type": "string", "enum": ["latest", "earliest"]}
-        }
-    },
-    {
-        "name": "stream_read",
-        "description": "Read events from a stream",
-        "parameters": {
-            "stream_name": {"type": "string"},
-            "count": {"type": "integer", "default": 10},
-            "block_ms": {"type": "integer", "default": 0}
-        }
-    }
-]
+**Why MCP:** Requires persistent event streaming infrastructure
+
+### MCP Tools
+
+```yaml
+tools:
+  - name: stream_publish
+    description: Publish event to stream
+    parameters:
+      stream: string (required)
+      event_type: string (required)
+      data: object (required)
+
+  - name: stream_subscribe
+    description: Subscribe to stream
+    parameters:
+      stream: string (required)
+      event_types: array (optional, filter)
+      from_position: string (enum: latest, earliest, timestamp)
+
+  - name: stream_read
+    description: Read events from stream
+    parameters:
+      stream: string (required)
+      count: integer (default: 10)
+      block_ms: integer (default: 0)
 ```
 
-**Use cases:**
+### Use Cases
+
 - Real-time agent coordination
-- Event-driven architectures
 - Audit logging
+- Event-driven architectures
 - Live dashboards
 
 ---
 
-## 7. State MCP Server
+# Implementation Roadmap
 
-**Purpose:** Persistent state machines for complex flows
+## Phase 1: Core Skills
+1. ✅ Define skill format (Agent Skills standard)
+2. 🔲 Implement Loop skill
+3. 🔲 Implement Router skill
+4. 🔲 Implement Evaluator skill
+5. 🔲 Skill loader for LangPy
 
-**Infrastructure:** Redis, DynamoDB, or PostgreSQL
-
-**MCP Interface:**
-```python
-tools = [
-    {
-        "name": "state_create",
-        "description": "Create a new state machine instance",
-        "parameters": {
-            "machine_id": {"type": "string"},
-            "initial_state": {"type": "string"},
-            "context": {"type": "object"}
-        }
-    },
-    {
-        "name": "state_transition",
-        "description": "Transition to a new state",
-        "parameters": {
-            "machine_id": {"type": "string"},
-            "event": {"type": "string"},
-            "data": {"type": "object"}
-        }
-    },
-    {
-        "name": "state_get",
-        "description": "Get current state and context",
-        "parameters": {
-            "machine_id": {"type": "string"}
-        }
-    },
-    {
-        "name": "state_history",
-        "description": "Get state transition history",
-        "parameters": {
-            "machine_id": {"type": "string"},
-            "limit": {"type": "integer", "default": 100}
-        }
-    }
-]
-```
-
-**Use cases:**
-- Order processing
-- Multi-step approvals
-- Conversation state
-- Long-running workflows
-
----
-
-## 8. Bridge MCP Server
-
-**Purpose:** Inter-agent communication and coordination
-
-**Infrastructure:** Custom service with WebSocket/gRPC
-
-**MCP Interface:**
-```python
-tools = [
-    {
-        "name": "bridge_register",
-        "description": "Register an agent with the bridge",
-        "parameters": {
-            "agent_id": {"type": "string"},
-            "capabilities": {"type": "array"},
-            "metadata": {"type": "object"}
-        }
-    },
-    {
-        "name": "bridge_send",
-        "description": "Send a message to another agent",
-        "parameters": {
-            "to_agent": {"type": "string"},
-            "message_type": {"type": "string"},
-            "payload": {"type": "object"},
-            "wait_response": {"type": "boolean", "default": False}
-        }
-    },
-    {
-        "name": "bridge_broadcast",
-        "description": "Broadcast a message to all agents with capability",
-        "parameters": {
-            "capability": {"type": "string"},
-            "message_type": {"type": "string"},
-            "payload": {"type": "object"}
-        }
-    },
-    {
-        "name": "bridge_discover",
-        "description": "Discover agents with specific capabilities",
-        "parameters": {
-            "capability": {"type": "string"}
-        }
-    }
-]
-```
-
-**Use cases:**
-- Multi-agent systems
-- Agent delegation
-- Swarm coordination
-- Service discovery
-
----
-
-# Implementation Priority
-
-## Phase 1: Essential Skills
-1. **Loop** - Enables iterative refinement patterns
-2. **Router** - Enables specialized agent routing
-3. **Evaluator** - Enables quality gates
-
-## Phase 2: Resilience Skills
-4. **Fallback** - Model/service resilience
-5. **Guard** - Input/output validation
-6. **Retry** - Sophisticated retry logic
+## Phase 2: Safety Skills
+6. 🔲 Implement Guard skill
+7. 🔲 Implement Fallback skill
+8. 🔲 Implement Retry skill
 
 ## Phase 3: Composition Skills
-7. **Aggregator** - Parallel result combination
+9. 🔲 Implement Aggregator skill
+10. 🔲 Skill-to-skill composition
 
 ## Phase 4: Essential MCP Servers
-8. **Cache** - Cost reduction for LLM calls
-9. **Human** - Human-in-the-loop workflows
-10. **Queue** - Async agent communication
+11. 🔲 Cache MCP Server
+12. 🔲 Human MCP Server
+13. 🔲 Queue MCP Server
 
 ## Phase 5: Advanced MCP Servers
-11. **Graph** - Relationship-based memory
-12. **State** - Complex state machines
-13. **Bridge** - Multi-agent coordination
-14. **Stream** - Real-time event processing
-15. **Scheduler** - Time-based automation
+14. 🔲 Graph MCP Server
+15. 🔲 State MCP Server
+16. 🔲 Bridge MCP Server
+17. 🔲 Scheduler MCP Server
+18. 🔲 Stream MCP Server
 
 ---
 
 # Contributing
 
-When implementing a new Skill or MCP Server:
+## Adding a Skill
 
-1. **Follow the interface patterns** shown in this document
-2. **Include comprehensive tests** with edge cases
-3. **Document usage examples** with real-world scenarios
-4. **Consider error handling** - what happens when things fail?
-5. **Think about observability** - logging, metrics, tracing
+1. Create directory: `skills/<skill-name>/`
+2. Create `SKILL.md` with required frontmatter
+3. Add optional scripts in `scripts/`
+4. Add optional references in `references/`
+5. Validate with: `skills-ref validate ./skills/<skill-name>`
+6. Add tests and examples
+7. Submit PR
 
-For Skills:
-- Must be built only from existing primitives
-- No external dependencies (pure Python)
-- Should be stateless where possible
+## Adding an MCP Server
 
-For MCP Servers:
-- Define clear tool schemas
-- Document infrastructure requirements
-- Provide Docker/docker-compose for local development
-- Include health checks and monitoring endpoints
+1. Create directory: `mcp_servers/<server-name>/`
+2. Define tool schemas in YAML
+3. Implement server with MCP SDK
+4. Add Docker/docker-compose for local dev
+5. Document infrastructure requirements
+6. Add health checks and monitoring
+7. Submit PR
+
+## Standards
+
+- Skills follow [agentskills.io](https://agentskills.io) specification
+- MCP Servers follow [modelcontextprotocol.io](https://modelcontextprotocol.io) specification
+- All extensions must include tests
+- All extensions must include usage examples
