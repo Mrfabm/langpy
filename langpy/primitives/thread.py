@@ -133,7 +133,12 @@ class Thread(BasePrimitive):
             # Try underlying implementation
             async_thread = self._get_async_thread()
             if async_thread:
-                result = await async_thread.create(metadata=metadata)
+                # AsyncThread has create_thread(), not create()
+                result = await async_thread.create_thread(
+                    name=metadata.get('name') if metadata else None,
+                    metadata=metadata,
+                    tags=metadata.get('tags', []) if metadata else []
+                )
                 if hasattr(result, 'id'):
                     thread_id = result.id
 
@@ -182,7 +187,16 @@ class Thread(BasePrimitive):
             # Try underlying implementation
             async_thread = self._get_async_thread()
             if async_thread:
-                await async_thread.add_message(thread_id, messages)
+                # AsyncThread.add_message() takes individual message fields, not list
+                for msg in messages:
+                    await async_thread.add_message(
+                        thread_id=thread_id,
+                        role=msg.get('role', 'user'),
+                        content=msg.get('content', ''),
+                        name=msg.get('name'),
+                        tool_call_id=msg.get('tool_call_id'),
+                        metadata=msg.get('metadata')
+                    )
 
             # Update in-memory store
             if thread_id not in self._threads:
@@ -238,7 +252,15 @@ class Thread(BasePrimitive):
                 async_thread = self._get_async_thread()
                 if async_thread:
                     result = await async_thread.get_messages(thread_id, limit=limit)
-                    messages = result if isinstance(result, list) else []
+                    # Convert ThreadMessage objects to dicts
+                    if isinstance(result, list) and result:
+                        if hasattr(result[0], 'dict'):
+                            # Pydantic models - convert to dict
+                            messages = [msg.dict() for msg in result]
+                        else:
+                            messages = result
+                    else:
+                        messages = []
                 else:
                     messages = []
 

@@ -102,36 +102,43 @@ class Agent(BasePrimitive):
             provider = "openai"
             model_name = model
 
-        # Import the appropriate adapter
+        # Create a simple adapter wrapper for function-based adapters
+        class AdapterWrapper:
+            def __init__(self, run_func):
+                self.run_func = run_func
+
+            async def run(self, payload):
+                return await self.run_func(payload)
+
+        # Import the appropriate adapter function
         try:
             if provider == "openai":
-                from pipe.adapters.openai import OpenAIAdapter
-                return OpenAIAdapter(model_name)
+                from pipe.adapters.openai import run as openai_run
+                return AdapterWrapper(openai_run)
             elif provider == "anthropic":
-                from pipe.adapters.anthropic import AnthropicAdapter
-                return AnthropicAdapter(model_name)
+                from pipe.adapters.anthropic import run as anthropic_run
+                return AdapterWrapper(anthropic_run)
             elif provider == "gemini" or provider == "google":
-                from pipe.adapters.gemini import GeminiAdapter
-                return GeminiAdapter(model_name)
+                from pipe.adapters.gemini import run as gemini_run
+                return AdapterWrapper(gemini_run)
             elif provider == "mistral":
-                from pipe.adapters.mistral import MistralAdapter
-                return MistralAdapter(model_name)
+                from pipe.adapters.mistral import run as mistral_run
+                return AdapterWrapper(mistral_run)
             elif provider == "groq":
-                from pipe.adapters.groq import GroqAdapter
-                return GroqAdapter(model_name)
+                from pipe.adapters.groq import run as groq_run
+                return AdapterWrapper(groq_run)
             elif provider == "ollama":
-                from pipe.adapters.ollama import OllamaAdapter
-                return OllamaAdapter(model_name)
+                from pipe.adapters.ollama import run as ollama_run
+                return AdapterWrapper(ollama_run)
             else:
                 # Try to dynamically load adapter
                 adapter_module = __import__(
                     f"pipe.adapters.{provider}",
-                    fromlist=[f"{provider.title()}Adapter"]
+                    fromlist=["run"]
                 )
-                adapter_class = getattr(adapter_module, f"{provider.title()}Adapter")
-                return adapter_class(model_name)
-        except ImportError:
-            raise ValueError(f"Unsupported provider: {provider}")
+                return AdapterWrapper(adapter_module.run)
+        except ImportError as e:
+            raise ValueError(f"Unsupported provider: {provider} - {str(e)}")
 
     # ========================================================================
     # Langbase-compatible API: run()
@@ -254,9 +261,12 @@ class Agent(BasePrimitive):
 
             # Handle regular response
             if hasattr(response, 'error') and response.error:
+                error_msg = str(response.error)
+                if isinstance(response.error, dict):
+                    error_msg = response.error.get('message', str(response.error))
                 return AgentResponse(
                     success=False,
-                    error=response.error.get('message', str(response.error)),
+                    error=error_msg,
                     model=model
                 )
 
@@ -274,8 +284,12 @@ class Agent(BasePrimitive):
                             if content:
                                 output = content
                             messages.append(msg)
-                            if 'tool_calls' in msg:
+                            if 'tool_calls' in msg and msg['tool_calls']:
                                 tool_calls.extend(msg['tool_calls'])
+                        elif hasattr(msg, 'content'):
+                            # Handle object-style message
+                            output = msg.content
+                            messages.append({"role": "assistant", "content": msg.content})
 
             return AgentResponse(
                 success=True,

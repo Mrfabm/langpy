@@ -182,11 +182,10 @@ class Memory(BasePrimitive):
                 chunks = await mem._chunker.chunk(text)
 
                 for chunk in chunks:
-                    embedding = await mem._embed.embed([chunk])
+                    # Store handles embedding internally
                     await mem._store.add(
-                        embeddings=embedding,
                         texts=[chunk],
-                        metadatas=[doc_metadata]
+                        metas=[doc_metadata]
                     )
                     added_count += 1
 
@@ -242,11 +241,10 @@ class Memory(BasePrimitive):
             }
 
             for chunk in chunks:
-                embedding = await mem._embed.embed([chunk])
+                # Store handles embedding internally
                 await mem._store.add(
-                    embeddings=embedding,
                     texts=[chunk],
-                    metadatas=[file_metadata]
+                    metas=[file_metadata]
                 )
                 added_count += 1
 
@@ -283,14 +281,11 @@ class Memory(BasePrimitive):
             mem = self._get_async_memory()
             await mem._ensure_initialized()
 
-            # Embed query
-            query_embedding = await mem._embed.embed([query])
-
-            # Search
-            results = await mem._store.search(
-                query_embedding=query_embedding[0],
-                top_k=top_k,
-                filter=filter
+            # Search (store handles query embedding internally)
+            results = await mem._store.query(
+                query=query,
+                k=top_k,
+                filt=filter
             )
 
             # Filter by min_score and format
@@ -363,7 +358,7 @@ class Memory(BasePrimitive):
             mem = self._get_async_memory()
             await mem._ensure_initialized()
 
-            stats = await mem._store.stats()
+            stats = await mem._store.get_metadata_stats()
 
             return MemoryResponse(
                 success=True,

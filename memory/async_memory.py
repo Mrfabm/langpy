@@ -13,14 +13,14 @@ from typing import List, Dict, Any, Optional, Union, AsyncGenerator
 from pathlib import Path
 
 from .models import (
-    MemorySettings, DocumentMetadata, MemoryChunk, 
+    MemorySettings, DocumentMetadata, MemoryChunk,
     MemoryQuery, MemorySearchResult, MemoryStats
 )
-from sdk.parser_interface import ParserInterface
-from sdk.chunker_interface import ChunkerInterface  
-from sdk.embed_interface import EmbedInterface
+# Fixed imports - use actual modules instead of non-existent 'sdk'
+from parser.async_parser import AsyncParser
+from chunker.async_chunker import AsyncChunker
+from embed.openai_async import OpenAIAsyncEmbedder
 from stores.base import BaseVectorStore
-from sdk.parser_interface import ParseRequest
 
 logger = logging.getLogger(__name__)
 
@@ -43,37 +43,37 @@ class AsyncMemory:
         """Lazy initialization of all components."""
         if self._initialized:
             return
-            
+
         # Initialize parser
-        self._parser = ParserInterface()
-        
+        self._parser = AsyncParser()
+
         # Initialize chunker
-        self._chunker = ChunkerInterface()
-        
+        self._chunker = AsyncChunker(
+            chunk_max_length=self.settings.chunk_max_length,
+            chunk_overlap=self.settings.chunk_overlap
+        )
+
         # Initialize embedder
-        self._embed = EmbedInterface()
-        
+        api_key = os.getenv('OPENAI_API_KEY') or os.getenv('LANGPY_API_KEY')
+        self._embed = OpenAIAsyncEmbedder(
+            model=self.settings.embed_model,
+            api_key=api_key
+        )
+
         # Initialize store based on backend
         await self._init_store()
-        
+
         self._initialized = True
         logger.info(f"Memory '{self.settings.name}' initialized with {self.settings.store_backend} backend")
     
     async def _init_store(self):
         """Initialize the vector store based on backend configuration."""
-        if self.settings.store_backend == "pgvector":
-            from stores.pgvector_store import PgVectorStore
-            self._store = PgVectorStore(
-                dsn=self.settings.store_uri,
-                table_name=f"memory_{self.settings.name}",
-                embedding_model=self.settings.embed_model
-            )
-        else:  # faiss
-            from stores.faiss_store import FaissStore
-            self._store = FaissStore(
-                index_path=f"./memory_{self.settings.name}.faiss",
-                embedding_model=self.settings.embed_model
-            )
+        # For now, use simple in-memory store
+        # TODO: Add support for FAISS and pgvector stores
+        from stores.memory_store import MemoryStore
+        self._store = MemoryStore(
+            embedding_model=self.settings.embed_model
+        )
     
     async def _parse(
         self,
@@ -82,33 +82,36 @@ class AsyncMemory:
     ) -> str:
         """
         Parse content with fix for direct text content.
-        
+
         The key fix: For direct text strings, return as-is without parsing
         to avoid MIME type detection issues that cause RuntimeError.
         """
         if isinstance(content, str):
-            # Direct text content - return as-is to avoid parser MIME type issues
+            # Direct text content - return as-is without parsing
             logger.debug("Processing direct text content, skipping parser")
-            result = await self._parser.parse_text(content)
-            return result.pages[0] if result.pages else ""
-            
+            return content
+
         elif isinstance(content, Path):
-            # File content - use parser
+            # File content - read and parse
             logger.debug(f"Processing file content via parser: {content}")
-            result = await self._parser.parse_file(content)
-            return result.pages[0] if result.pages else ""
-            
+            with open(content, 'rb') as f:
+                file_bytes = f.read()
+            result = await self._parser.parse(
+                file_bytes,
+                filename=str(content)
+            )
+            return result.text if hasattr(result, 'text') else str(result)
+
         elif isinstance(content, bytes):
             # Bytes content - use parser
             logger.debug(f"Processing bytes content via parser")
-            result = await self._parser.parse_bytes(content)
-            return result.pages[0] if result.pages else ""
-            
+            result = await self._parser.parse(content)
+            return result.text if hasattr(result, 'text') else str(result)
+
         else:
-            # Fallback to parser for other types
-            logger.debug(f"Using parser for unknown content type: {type(content)}")
-            result = await self._parser.parse_content(content)
-            return result.pages[0] if result.pages else ""
+            # Unknown type - try to convert to string
+            logger.debug(f"Converting unknown content type to string: {type(content)}")
+            return str(content)
     
     async def upload(
         self,
