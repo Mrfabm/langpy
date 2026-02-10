@@ -463,6 +463,156 @@ class LoopPrimitive(BasePrimitive):
         return Success(current_ctx)
 
 
+class MapPrimitive(BasePrimitive):
+    """
+    Map a primitive over a list of items (for-each pattern).
+
+    Processes each item through the primitive, optionally in parallel.
+
+    Example:
+        process_docs = map_over(
+            items=lambda ctx: ctx.get("documents"),
+            apply=lb.parser | lb.memory,
+            parallel=True
+        )
+    """
+
+    def __init__(
+        self,
+        items: Callable[["Context"], List[Any]],
+        apply: IPrimitive,
+        parallel: bool = True,
+        name: Optional[str] = None
+    ):
+        """
+        Create a map primitive.
+
+        Args:
+            items: Function (Context) -> List to get items to process
+            apply: Primitive to apply to each item
+            parallel: Execute in parallel (True) or sequential (False)
+            name: Optional name
+        """
+        super().__init__(name or "Map")
+        self._items_fn = items
+        self._apply = apply
+        self._parallel = parallel
+
+    async def _process(self, ctx: "Context") -> "Result[Context]":
+        """Execute primitive for each item."""
+        from .result import Success, Failure, PrimitiveError, ErrorCode
+        import asyncio
+
+        # Get items
+        items = self._items_fn(ctx)
+
+        if not items:
+            return Success(ctx.set("map_results", []))
+
+        # Process each item
+        if self._parallel:
+            # Parallel execution
+            tasks = []
+            for i, item in enumerate(items):
+                item_ctx = ctx.set("map_item", item).set("map_index", i)
+                tasks.append(self._apply.process(item_ctx))
+
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Check for failures
+            map_results = []
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    return Failure(PrimitiveError(
+                        code=ErrorCode.EXECUTION_ERROR,
+                        message=f"Map failed at index {i}: {str(result)}",
+                        primitive=self._name
+                    ))
+
+                if result.is_failure():
+                    return result  # Propagate first failure
+
+                map_results.append(result.unwrap())
+        else:
+            # Sequential execution
+            map_results = []
+            for i, item in enumerate(items):
+                item_ctx = ctx.set("map_item", item).set("map_index", i)
+                result = await self._apply.process(item_ctx)
+
+                if result.is_failure():
+                    return result
+
+                map_results.append(result.unwrap())
+
+        # Store results in context
+        return Success(ctx.set("map_results", map_results))
+
+
+class ReducePrimitive(BasePrimitive):
+    """
+    Reduce/aggregate multiple values into one.
+
+    Combines results from multiple context keys or previous steps.
+
+    Example:
+        aggregate = reduce(
+            inputs=["research1", "research2", "research3"],
+            combine=lambda results: "\\n\\n".join(results)
+        )
+    """
+
+    def __init__(
+        self,
+        inputs: Union[List[str], Callable[["Context"], List[Any]]],
+        combine: Callable[[List[Any]], Any],
+        name: Optional[str] = None
+    ):
+        """
+        Create a reduce primitive.
+
+        Args:
+            inputs: List of context keys OR function (Context) -> List of values
+            combine: Function to combine list into single value
+            name: Optional name
+        """
+        super().__init__(name or "Reduce")
+        self._inputs = inputs
+        self._combine = combine
+
+    async def _process(self, ctx: "Context") -> "Result[Context]":
+        """Execute reduction."""
+        from .result import Success, Failure, PrimitiveError, ErrorCode
+
+        # Get input values
+        if callable(self._inputs):
+            values = self._inputs(ctx)
+        else:
+            values = []
+            for key in self._inputs:
+                value = ctx.get(key)
+                if value is not None:
+                    values.append(value)
+
+        if not values:
+            return Failure(PrimitiveError(
+                code=ErrorCode.VALIDATION_ERROR,
+                message="No values to reduce",
+                primitive=self._name
+            ))
+
+        # Apply combine function
+        try:
+            result = self._combine(values)
+            return Success(ctx.set("reduce_result", result))
+        except Exception as e:
+            return Failure(PrimitiveError(
+                code=ErrorCode.EXECUTION_ERROR,
+                message=f"Reduce failed: {str(e)}",
+                primitive=self._name
+            ))
+
+
 # ============================================================================
 # Helper Functions
 # ============================================================================
@@ -585,3 +735,65 @@ def loop_while(
         )
     """
     return LoopPrimitive(condition, body, max_iterations, name)
+
+
+def map_over(
+    items: Callable[["Context"], List[Any]],
+    apply: IPrimitive,
+    parallel: bool = True,
+    name: Optional[str] = None
+) -> MapPrimitive:
+    """
+    Apply a primitive to each item in a list (for-each pattern).
+
+    Args:
+        items: Function (Context) -> List to get items to process
+        apply: Primitive to apply to each item
+        parallel: Execute in parallel (True) or sequential (False)
+        name: Optional name
+
+    Example:
+        # Process multiple documents in parallel
+        process_all = map_over(
+            items=lambda ctx: ctx.get("documents"),
+            apply=lb.parser | lb.chunker | lb.memory,
+            parallel=True
+        )
+
+        # Research multiple topics
+        research_all = map_over(
+            items=lambda ctx: ctx.get("topics"),
+            apply=lb.agent,
+            parallel=True
+        )
+    """
+    return MapPrimitive(items, apply, parallel, name)
+
+
+def reduce(
+    inputs: Union[List[str], Callable[["Context"], List[Any]]],
+    combine: Callable[[List[Any]], Any],
+    name: Optional[str] = None
+) -> ReducePrimitive:
+    """
+    Reduce/aggregate multiple values into one.
+
+    Args:
+        inputs: List of context keys OR function (Context) -> List of values
+        combine: Function to combine list into single value
+        name: Optional name
+
+    Example:
+        # Combine research results
+        synthesize = reduce(
+            inputs=["research1", "research2", "research3"],
+            combine=lambda results: "\\n\\n".join(str(r) for r in results)
+        )
+
+        # Aggregate scores
+        average_score = reduce(
+            inputs=lambda ctx: ctx.get("all_scores", []),
+            combine=lambda scores: sum(scores) / len(scores)
+        )
+    """
+    return ReducePrimitive(inputs, combine, name)

@@ -75,6 +75,8 @@ from .pipeline import (
     RetryPrimitive,
     BranchPrimitive,
     LoopPrimitive,
+    MapPrimitive,
+    ReducePrimitive,
     pipeline,
     parallel,
     when,
@@ -82,6 +84,8 @@ from .pipeline import (
     retry,
     branch,
     loop_while,
+    map_over,
+    reduce,
 )
 
 # Observability
@@ -151,6 +155,8 @@ __all__ = [
     "RetryPrimitive",
     "BranchPrimitive",
     "LoopPrimitive",
+    "MapPrimitive",
+    "ReducePrimitive",
     "pipeline",
     "parallel",
     "when",
@@ -158,6 +164,8 @@ __all__ = [
     "retry",
     "branch",
     "loop_while",
+    "map_over",
+    "reduce",
 
     # Observability
     "CostCalculator",

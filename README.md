@@ -50,6 +50,63 @@ if result.is_success():
     print(result.unwrap().response)
 ```
 
+## Control Flow Operators
+
+LangPy provides **composable operators** for control flow - these are Lego block connectors that let you build any agent architecture:
+
+| Operator | Pattern | Example |
+|----------|---------|---------|
+| **`loop_while()`** | Iteration | Refine until quality threshold |
+| **`map_over()`** | For-each | Process multiple items in parallel |
+| **`reduce()`** | Aggregation | Combine multiple results |
+| **`when()`** | Conditional | If/else routing |
+| **`branch()`** | Multi-way | Route to different paths |
+| **`retry()`** | Resilience | Automatic retry with backoff |
+| **`recover()`** | Error handling | Fallback logic |
+
+### Example: Map-Reduce Pattern
+
+```python
+from langpy import Langpy, map_over, reduce, pipeline
+
+lb = Langpy(api_key="...")
+
+# Map: Research multiple topics in parallel
+research = map_over(
+    items=lambda ctx: ctx.get("topics"),
+    apply=lb.agent,
+    parallel=True
+)
+
+# Reduce: Combine findings
+synthesize = reduce(
+    inputs=lambda ctx: ctx.get("map_results"),
+    combine=lambda results: "\n\n".join(results)
+)
+
+# Compose
+map_reduce = pipeline(research, synthesize)
+
+result = await map_reduce.process(Context(topics=["AI", "ML", "DL"]))
+```
+
+### Example: Iterative Refinement
+
+```python
+from langpy import loop_while
+
+# Keep refining until quality threshold
+refine = loop_while(
+    condition=lambda ctx: ctx.get("quality") < 0.9,
+    body=lb.agent,
+    max_iterations=5
+)
+
+result = await refine.process(Context(content="draft"))
+```
+
+**See [docs/OPERATORS.md](docs/OPERATORS.md) for complete operator reference and patterns.**
+
 ### Key Features of v2.0
 
 | Feature | Description |

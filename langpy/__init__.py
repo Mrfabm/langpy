@@ -246,6 +246,9 @@ from .core import (
     recover,
     retry,
     branch,
+    loop_while,
+    map_over,
+    reduce,
 
     # Configuration
     configure,
@@ -282,6 +285,9 @@ __all__ = [
     "recover",
     "retry",
     "branch",
+    "loop_while",
+    "map_over",
+    "reduce",
     # Configuration
     "configure",
     "get_config",
