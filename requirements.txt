@@ -38,7 +38,7 @@ markdown>=3.4.0            # Markdown parsing
 
 # Vector Storage (Lightweight)
 faiss-cpu>=1.7.4           # Fast vector similarity search
-numpy>=1.24.0,<2.0         # Required by FAISS
+numpy>=1.24.0              # Required by FAISS (2.x has better wheel support)
 
 # Database (Optional - only if using pgvector)
 # pgvector>=0.2.0
