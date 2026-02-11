@@ -1,10 +1,20 @@
 # LangPy Installation Guide
 
-## 🚨 **Problem: The Default Installation Takes Forever!**
+## 🚀 **Fastest Install (Recommended for Most Users)**
 
-The default `requirements.txt` includes **heavy ML libraries** (PyTorch, Transformers, etc.) that take 30+ minutes to install and use 3-4GB of disk space.
+Install directly from GitHub with one command:
 
-**Most users don't need these!**
+```bash
+pip install git+https://github.com/Mrfabm/langpy.git
+```
+
+**That's it!** This installs the lightweight version (~300MB, 1-2 minutes).
+
+---
+
+## 📚 **Alternative Installation Methods**
+
+For development or specific requirements:
 
 ---
 

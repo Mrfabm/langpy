@@ -4,21 +4,31 @@
 
 LangPy now uses **lightweight dependencies by default** for fast installation!
 
+### Direct Installation (No Clone Required)
+
 ```bash
-# Clone from GitHub
-git clone https://github.com/YourOrg/langpy.git
-cd langpy
-
-# Install (takes 1-2 minutes!)
-pip install -e .
-
-# Or install specific version
-pip install git+https://github.com/YourOrg/langpy.git
+# Install directly from GitHub
+pip install git+https://github.com/Mrfabm/langpy.git
 ```
 
+**That's it!** No cloning, no setup - just one command.
+
 **Install time: 1-2 minutes** ✅
-**Packages: ~15 essential ones** ✅
+**Packages: ~46 essential packages** ✅
 **Size: ~300MB** ✅
+
+### For Development (Editable Install)
+
+If you want to modify the code:
+
+```bash
+# Clone the repository
+git clone https://github.com/Mrfabm/langpy.git
+cd langpy
+
+# Install in editable mode
+pip install -e .
+```
 
 ---
 
@@ -170,7 +180,7 @@ For contributing to LangPy:
 
 ```bash
 # Clone repository
-git clone https://github.com/YourOrg/langpy.git
+git clone https://github.com/Mrfabm/langpy.git
 cd langpy
 
 # Install in editable mode with dev tools
@@ -335,4 +345,4 @@ After installation:
 
 ---
 
-**Questions?** Open an issue on [GitHub](https://github.com/YourOrg/langpy/issues)
+**Questions?** Open an issue on [GitHub](https://github.com/Mrfabm/langpy/issues)

@@ -307,24 +307,44 @@ LangPy now provides **100% feature parity** with Langbase plus significant enhan
 
 ## 📦 Installation
 
-### From PyPI (Recommended)
+### Quick Install (Recommended)
+
+Install directly from GitHub:
 
 ```bash
-pip install langpy
+pip install git+https://github.com/Mrfabm/langpy.git
 ```
 
-### From Source
+**That's it!** Installs in 1-2 minutes with all core features included.
+
+### For Development
+
+If you want to modify the code:
 
 ```bash
-git clone <your-repo-url>
-cd primitives
+git clone https://github.com/Mrfabm/langpy.git
+cd langpy
 
 # Install in editable mode
 pip install -e .
-
-# Or install from local path
-pip install /path/to/langpy
 ```
+
+### Optional Features
+
+Install additional features as needed:
+
+```bash
+# Add more LLM providers (Claude, Mistral)
+pip install git+https://github.com/Mrfabm/langpy.git#egg=langpy[providers]
+
+# Add PostgreSQL + pgvector
+pip install git+https://github.com/Mrfabm/langpy.git#egg=langpy[postgres]
+
+# Add ML features (PyTorch, Transformers) - Heavy!
+pip install git+https://github.com/Mrfabm/langpy.git#egg=langpy[ml]
+```
+
+See [INSTALLATION.md](INSTALLATION.md) for detailed installation options.
 
 ### Updating LangPy
 
