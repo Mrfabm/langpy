@@ -1,0 +1,33 @@
+# ============================================================================
+# LangPy CORE Requirements (Absolutely Essential Only)
+# ============================================================================
+# This is the absolute minimum to run basic LangPy features.
+# Install time: ~1-2 minutes
+#
+# Install: pip install -r requirements-core.txt
+# ============================================================================
+
+# Core Framework (Required)
+pydantic>=2.0,<3.0
+python-dotenv>=1.0.0
+
+# LLM Provider (Choose one)
+openai>=1.0.0
+
+# HTTP Client (Required)
+httpx>=0.24.0
+aiohttp>=3.8.0
+
+# Async Operations (Required)
+aiofiles>=23.0.0
+
+# Vector Storage (Required for Memory primitive)
+faiss-cpu>=1.7.4
+numpy>=1.24.0,<2.0
+
+# That's it! This is enough to run:
+# - Agent primitive (with OpenAI)
+# - Pipe primitive
+# - Memory primitive (with FAISS)
+# - Thread primitive
+# - Workflow primitive
